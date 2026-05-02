@@ -27,8 +27,126 @@ String _featureError(Object error) {
   return '操作失败，请确认后端服务已启动';
 }
 
-class ActivityAllScreen extends StatelessWidget {
-  const ActivityAllScreen({super.key});
+class ActivityAllScreen extends StatefulWidget {
+  const ActivityAllScreen({super.key, this.initialCategory = '全部'});
+
+  final String initialCategory;
+
+  @override
+  State<ActivityAllScreen> createState() => _ActivityAllScreenState();
+}
+
+class _ActivityAllScreenState extends State<ActivityAllScreen> {
+  static const _categories = ['全部', '社团招新', '讲座', '体育', '文艺', '志愿', '比赛'];
+  static const _sortTabs = ['推荐', '最新', '热门', '离我最近'];
+
+  late Future<List<_ActivityItem>> _activitiesFuture;
+  late String _selectedCategory;
+  var _selectedSort = '推荐';
+  var _keyword = '';
+  final _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCategory = _normalizeInitialCategory(widget.initialCategory);
+    _activitiesFuture = _loadActivities();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  String _normalizeInitialCategory(String value) {
+    if (_categories.contains(value)) return value;
+    if (value.contains('讲座')) return '讲座';
+    if (value.contains('体育')) return '体育';
+    if (value.contains('文艺')) return '文艺';
+    if (value.contains('志愿')) return '志愿';
+    if (value.contains('比赛') || value.contains('竞赛')) return '比赛';
+    if (value.contains('社团')) return '社团招新';
+    return '全部';
+  }
+
+  Future<List<_ActivityItem>> _loadActivities() async {
+    final feed = await CampusRepository.instance.fetchFeed();
+    return feed.activities
+        .map((activity) => _ActivityItem.fromActivity(activity))
+        .toList(growable: false);
+  }
+
+  Future<void> _refreshActivities() async {
+    final future = _loadActivities();
+    setState(() => _activitiesFuture = future);
+    await future;
+  }
+
+  List<_ActivityItem> _visibleItems(List<_ActivityItem> source) {
+    final keyword = _keyword.trim().toLowerCase();
+    final filtered = source.where((item) {
+      return _matchesCategory(item) && _matchesKeyword(item, keyword);
+    }).toList(growable: true);
+
+    switch (_selectedSort) {
+      case '热门':
+        filtered.sort((left, right) => right.people.compareTo(left.people));
+        break;
+      case '最新':
+        filtered.sort((left, right) => right.date.compareTo(left.date));
+        break;
+      case '离我最近':
+        filtered.sort((left, right) => left.location.compareTo(right.location));
+        break;
+      case '推荐':
+      default:
+        break;
+    }
+
+    return filtered;
+  }
+
+  bool _matchesKeyword(_ActivityItem item, String keyword) {
+    if (keyword.isEmpty) return true;
+    final haystack = [
+      item.title,
+      item.date,
+      item.time,
+      item.location,
+      ...item.tags.map((tag) => tag.label),
+    ].join(' ').toLowerCase();
+    return haystack.contains(keyword);
+  }
+
+  bool _matchesCategory(_ActivityItem item) {
+    if (_selectedCategory == '全部') return true;
+    final aliases = switch (_selectedCategory) {
+      '社团招新' => const ['社团招新', '社团'],
+      '讲座' => const ['讲座', '论坛', '讲座论坛'],
+      '体育' => const ['体育', '赛事', '竞技'],
+      '文艺' => const ['文艺', '演出', '音乐', '摄影'],
+      '志愿' => const ['志愿', '公益'],
+      '比赛' => const ['比赛', '竞赛'],
+      _ => <String>[_selectedCategory],
+    };
+    final haystack = [
+      item.title,
+      item.location,
+      ...item.tags.map((tag) => tag.label),
+    ].join(' ');
+    return aliases.any(haystack.contains);
+  }
+
+  void _selectCategory(String value) {
+    if (_selectedCategory == value) return;
+    setState(() => _selectedCategory = value);
+  }
+
+  void _selectSort(String value) {
+    if (_selectedSort == value) return;
+    setState(() => _selectedSort = value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,28 +159,268 @@ class ActivityAllScreen extends StatelessWidget {
         Icon(Icons.filter_alt_outlined, size: 28),
         SizedBox(width: 18),
       ],
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 18),
-        children: [
-          const _FilterBar(labels: ['全部', '今天', '本周', '文艺', '体育', '讲座', '志愿']),
-          const _UnderlineTabs(labels: ['推荐', '最新', '热门', '离我最近']),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Column(
+      child: FutureBuilder<List<_ActivityItem>>(
+        future: _activitiesFuture,
+        builder: (context, snapshot) {
+          final source = snapshot.data ?? const <_ActivityItem>[];
+          final items = _visibleItems(source);
+          final isLoading = snapshot.connectionState == ConnectionState.waiting &&
+              source.isEmpty;
+          final hasError = snapshot.hasError && source.isEmpty;
+
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refreshActivities,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 18),
               children: [
-                for (final item in _activityItems)
+                _ActivitySearchBox(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _keyword = value),
+                  onClear: () {
+                    _searchController.clear();
+                    setState(() => _keyword = '');
+                  },
+                ),
+                _SelectableFilterBar(
+                  labels: _categories,
+                  selected: _selectedCategory,
+                  onSelected: _selectCategory,
+                ),
+                _SelectableUnderlineTabs(
+                  labels: _sortTabs,
+                  selected: _selectedSort,
+                  onSelected: _selectSort,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+                  child: Text(
+                    isLoading
+                        ? '正在加载活动列表'
+                        : '共找到 ${items.length} 个活动',
+                    style: const TextStyle(color: AppColors.muted, fontSize: 15),
+                  ),
+                ),
+                if (isLoading)
+                  const _ActivityListState(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在加载活动',
+                    subtitle: '正在从后端同步最新活动数据',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _ActivityListState(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (items.isEmpty)
+                  const _ActivityListState(
+                    icon: Icons.event_busy_rounded,
+                    title: '暂无活动',
+                    subtitle: '换个分类或关键词试试，也可以下拉刷新',
+                  )
+                else
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _ActivitySummaryCard(
-                      item: item,
-                      actionLabel: item.registered ? '已报名' : '报名中',
-                      actionOutlined: item.registered,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Column(
+                      children: [
+                        for (final item in items)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _ActivitySummaryCard(
+                              item: item,
+                              actionLabel: item.registered ? '已报名' : '报名中',
+                              actionOutlined: item.registered,
+                            ),
+                          ),
+                      ],
                     ),
                   ),
               ],
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ActivitySearchBox extends StatelessWidget {
+  const _ActivitySearchBox({
+    required this.controller,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 2),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          hintText: '搜索活动名称、地点、分类...',
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close_rounded),
+                ),
+          filled: true,
+          fillColor: const Color(0xFFF0F4FA),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
           ),
+          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectableFilterBar extends StatelessWidget {
+  const _SelectableFilterBar({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> labels;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 10, 0, 14),
+      child: SizedBox(
+        height: 38,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemBuilder: (context, index) {
+            final label = labels[index];
+            return GestureDetector(
+              onTap: () => onSelected(label),
+              child: _FilterChip(label: label, selected: label == selected),
+            );
+          },
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemCount: labels.length,
+        ),
+      ),
+    );
+  }
+}
+
+class _SelectableUnderlineTabs extends StatelessWidget {
+  const _SelectableUnderlineTabs({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> labels;
+  final String selected;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+      child: Row(
+        children: [
+          for (final label in labels)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelected(label),
+                child: Column(
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: label == selected ? AppColors.blue : AppColors.muted,
+                        fontSize: 15,
+                        fontWeight: label == selected
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 22,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: label == selected
+                            ? AppColors.blue
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActivityListState extends StatelessWidget {
+  const _ActivityListState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 36, 18, 36),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(18, 28, 18, 28),
+        child: Column(
+          children: [
+            if (showLoading)
+              const CircularProgressIndicator(color: AppColors.blue)
+            else
+              Icon(icon, size: 48, color: AppColors.blue),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.muted, fontSize: 15),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4041,7 +4399,10 @@ class _ActivityItem {
     this.registered = false,
   });
 
-  factory _ActivityItem.fromActivity(CampusActivity activity) {
+  factory _ActivityItem.fromActivity(
+    CampusActivity activity, {
+    bool registered = false,
+  }) {
     return _ActivityItem(
       title: activity.title,
       imageUrl: activity.posterUrl,
@@ -4056,7 +4417,7 @@ class _ActivityItem {
       people: activity.enrolled,
       capacity: activity.capacity,
       guests: activity.guests,
-      registered: true,
+      registered: registered,
     );
   }
 
