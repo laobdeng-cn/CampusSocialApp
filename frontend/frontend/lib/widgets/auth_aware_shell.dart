@@ -64,27 +64,6 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
     );
   }
 
-  Future<void> _logout() async {
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('退出登录'),
-        content: const Text('确认退出当前账号吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('退出'),
-          ),
-        ],
-      ),
-    );
-    if (shouldLogout == true) await _goLogin('已退出登录');
-  }
-
   Future<void> _loadUnreadCount() async {
     if (!AuthSession.isLoggedIn) {
       if (mounted && _unreadCount != 0) setState(() => _unreadCount = 0);
@@ -119,7 +98,6 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
               _loadUnreadCount();
             },
           ),
-        if (_currentTab == 4) _ProfileLogoutButton(onLogout: _logout),
         if (_unreadCount > 0)
           _BottomUnreadBadge(currentTab: _currentTab, unreadCount: _unreadCount),
       ],
@@ -187,49 +165,6 @@ class _HomeUserHeader extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileLogoutButton extends StatelessWidget {
-  const _ProfileLogoutButton({required this.onLogout});
-
-  final VoidCallback onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      right: 18,
-      top: MediaQuery.paddingOf(context).top + 12,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          onTap: onLogout,
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.line),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.logout_rounded, color: AppColors.red, size: 18),
-                SizedBox(width: 5),
-                Text(
-                  '退出',
-                  style: TextStyle(
-                    color: AppColors.red,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
             ),
           ),
         ),
