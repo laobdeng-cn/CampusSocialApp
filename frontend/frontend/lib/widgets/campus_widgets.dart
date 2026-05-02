@@ -494,41 +494,22 @@ class _MessageTabIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = selected
-        ? Container(
-            width: 28,
-            height: 28,
-            decoration: const BoxDecoration(
-              color: AppColors.blue,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.more_horiz_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-          )
-        : const Icon(Icons.chat_bubble_outline_rounded);
-
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        icon,
-        Positioned(
-          top: selected ? -2 : -4,
-          right: selected ? -3 : -5,
-          child: Container(
-            width: 9,
-            height: 9,
-            decoration: BoxDecoration(
-              color: AppColors.red,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.4),
-            ),
-          ),
+    if (selected) {
+      return Container(
+        width: 28,
+        height: 28,
+        decoration: const BoxDecoration(
+          color: AppColors.blue,
+          shape: BoxShape.circle,
         ),
-      ],
-    );
+        child: const Icon(
+          Icons.more_horiz_rounded,
+          color: Colors.white,
+          size: 18,
+        ),
+      );
+    }
+    return const Icon(Icons.chat_bubble_outline_rounded);
   }
 }
 
