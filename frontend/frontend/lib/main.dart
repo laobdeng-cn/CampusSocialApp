@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import 'repositories/auth_session.dart';
 import 'screens/auth_screens.dart';
+import 'screens/main_shell.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AuthSession.restore();
   runApp(const CampusSocialApp());
 }
 
@@ -23,7 +27,7 @@ class CampusSocialApp extends StatelessWidget {
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const LoginScreen(),
+      home: AuthSession.isLoggedIn ? const CampusShell() : const LoginScreen(),
     );
   }
 }
