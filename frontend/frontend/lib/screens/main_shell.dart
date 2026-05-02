@@ -4392,7 +4392,33 @@ class _SettingsLogoutButton extends StatelessWidget {
     return SizedBox(
       height: 52,
       child: OutlinedButton(
-        onPressed: onTap,
+        onPressed: () async {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('退出登录'),
+              content: const Text('你确定要退出登录吗？'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('确定退出'),
+                ),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            onTap();
+          }
+        },
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.red,
           side: const BorderSide(color: AppColors.red),
