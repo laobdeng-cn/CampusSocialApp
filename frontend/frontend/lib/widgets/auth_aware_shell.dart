@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/campus_models.dart';
@@ -17,16 +19,23 @@ class AuthAwareCampusShell extends StatefulWidget {
 class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
   var _currentTab = campusTabIndexNotifier.value;
   var _unreadCount = 0;
+  Timer? _unreadSyncTimer;
 
   @override
   void initState() {
     super.initState();
     campusTabIndexNotifier.addListener(_syncTabIndex);
     _loadUnreadCount();
+    _unreadSyncTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_currentTab == 0 || _currentTab == 2) {
+        _loadUnreadCount();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _unreadSyncTimer?.cancel();
     campusTabIndexNotifier.removeListener(_syncTabIndex);
     super.dispose();
   }
@@ -42,18 +51,16 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
 
   Future<void> _loadUnreadCount() async {
     if (!AuthSession.isLoggedIn) {
-      if (mounted) setState(() => _unreadCount = 0);
+      if (mounted && _unreadCount != 0) setState(() => _unreadCount = 0);
       return;
     }
 
     try {
       final notifications = await CampusRepository.instance.fetchNotifications();
       final count = notifications.where((item) => item.unread).length;
-      if (!mounted) return;
-      setState(() => _unreadCount = count);
+      if (mounted && _unreadCount != count) setState(() => _unreadCount = count);
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _unreadCount = 0);
+      if (mounted && _unreadCount != 0) setState(() => _unreadCount = 0);
     }
   }
 
@@ -71,6 +78,10 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
               _loadUnreadCount();
             },
           ),
+        _BottomMessageUnreadOverlay(
+          currentTab: _currentTab,
+          unreadCount: _unreadCount,
+        ),
       ],
     );
   }
@@ -103,12 +114,7 @@ class _HomeUserHeaderOverlay extends StatelessWidget {
           child: Container(
             height: 86,
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                bottom: BorderSide(color: Color(0x00FFFFFF)),
-              ),
-            ),
+            decoration: const BoxDecoration(color: Colors.white),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -144,6 +150,43 @@ class _HomeUserHeaderOverlay extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BottomMessageUnreadOverlay extends StatelessWidget {
+  const _BottomMessageUnreadOverlay({
+    required this.currentTab,
+    required this.unreadCount,
+  });
+
+  final int currentTab;
+  final int unreadCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final left = media.size.width * 0.5 + (currentTab == 2 ? 14 : 12);
+    final bottom = media.padding.bottom + (currentTab == 2 ? 54 : 57);
+
+    return Positioned(
+      left: left,
+      bottom: bottom,
+      child: IgnorePointer(
+        child: unreadCount <= 0
+            ? Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+              )
+            : Badge(
+                label: Text(unreadCount > 99 ? '99+' : unreadCount.toString()),
+                child: const SizedBox(width: 8, height: 8),
+              ),
       ),
     );
   }
