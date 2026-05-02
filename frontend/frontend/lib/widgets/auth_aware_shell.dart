@@ -7,7 +7,6 @@ import '../repositories/auth_session.dart';
 import '../repositories/campus_repository.dart';
 import '../screens/main_shell.dart';
 import '../theme/app_theme.dart';
-import 'campus_widgets.dart';
 
 class AuthAwareCampusShell extends StatefulWidget {
   const AuthAwareCampusShell({super.key});
@@ -78,10 +77,11 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
               _loadUnreadCount();
             },
           ),
-        _BottomMessageUnreadOverlay(
-          currentTab: _currentTab,
-          unreadCount: _unreadCount,
-        ),
+        if (_unreadCount > 0)
+          _BottomMessageUnreadOverlay(
+            currentTab: _currentTab,
+            unreadCount: _unreadCount,
+          ),
       ],
     );
   }
@@ -174,19 +174,10 @@ class _BottomMessageUnreadOverlay extends StatelessWidget {
       left: left,
       bottom: bottom,
       child: IgnorePointer(
-        child: unreadCount <= 0
-            ? Container(
-                width: 18,
-                height: 18,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-              )
-            : Badge(
-                label: Text(unreadCount > 99 ? '99+' : unreadCount.toString()),
-                child: const SizedBox(width: 8, height: 8),
-              ),
+        child: Badge(
+          label: Text(unreadCount > 99 ? '99+' : unreadCount.toString()),
+          child: const SizedBox(width: 8, height: 8),
+        ),
       ),
     );
   }
