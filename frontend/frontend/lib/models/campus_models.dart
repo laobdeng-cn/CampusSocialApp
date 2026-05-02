@@ -188,10 +188,13 @@ class CampusPost {
     required this.saves,
     required this.shares,
     this.id = '',
+    this.groupId = '',
     this.isPinned = false,
+    this.pinnedInGroup = false,
   });
 
   final String id;
+  final String groupId;
   final CampusUser author;
   final String title;
   final String body;
@@ -204,12 +207,14 @@ class CampusPost {
   final int saves;
   final int shares;
   final bool isPinned;
+  final bool pinnedInGroup;
 
   factory CampusPost.fromJson(Map<String, dynamic> json) {
     final authorJson = _readMap(json, 'author');
 
     return CampusPost(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
+      groupId: _readString(json, 'groupId'),
       author: authorJson == null
           ? const CampusUser(
               name: '校园同学',
@@ -231,11 +236,13 @@ class CampusPost {
       saves: _readInt(json, 'saves'),
       shares: _readInt(json, 'shares'),
       isPinned: json['isPinned'] == true,
+      pinnedInGroup: json['pinnedInGroup'] == true,
     );
   }
 
   CampusPost copyWith({
     String? id,
+    String? groupId,
     CampusUser? author,
     String? title,
     String? body,
@@ -248,9 +255,11 @@ class CampusPost {
     int? saves,
     int? shares,
     bool? isPinned,
+    bool? pinnedInGroup,
   }) {
     return CampusPost(
       id: id ?? this.id,
+      groupId: groupId ?? this.groupId,
       author: author ?? this.author,
       title: title ?? this.title,
       body: body ?? this.body,
@@ -263,6 +272,7 @@ class CampusPost {
       saves: saves ?? this.saves,
       shares: shares ?? this.shares,
       isPinned: isPinned ?? this.isPinned,
+      pinnedInGroup: pinnedInGroup ?? this.pinnedInGroup,
     );
   }
 }
@@ -452,27 +462,66 @@ class CampusCheckInRecord {
   }
 }
 
+class CampusActivityEnrollment {
+  const CampusActivityEnrollment({
+    required this.id,
+    required this.user,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String id;
+  final CampusUser user;
+  final String status;
+  final String createdAt;
+
+  factory CampusActivityEnrollment.fromJson(Map<String, dynamic> json) {
+    final userJson = _readMap(json, 'user');
+    return CampusActivityEnrollment(
+      id: _readString(json, 'id', fallback: _readString(json, '_id')),
+      user: userJson == null
+          ? const CampusUser(
+              name: '校园同学',
+              school: '未知学院',
+              major: '未填写专业',
+              grade: '未填写年级',
+              avatarUrl: 'https://i.pravatar.cc/180?img=1',
+              bio: '',
+            )
+          : CampusUser.fromJson(userJson),
+      status: _readString(json, 'status', fallback: 'registered'),
+      createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
+    );
+  }
+}
+
 class CampusFavoriteRecord {
   const CampusFavoriteRecord({
     required this.id,
     required this.kind,
     required this.post,
+    required this.activity,
     required this.createdAt,
   });
 
   final String id;
   final String kind;
   final CampusPost post;
+  final CampusActivity activity;
   final String createdAt;
 
   factory CampusFavoriteRecord.fromJson(Map<String, dynamic> json) {
     final postJson = _readMap(json, 'post');
+    final activityJson = _readMap(json, 'activity');
     return CampusFavoriteRecord(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
       kind: _readString(json, 'kind', fallback: 'post'),
       post: postJson == null
           ? CampusPost.fromJson(const {})
           : CampusPost.fromJson(postJson),
+      activity: activityJson == null
+          ? CampusActivity.fromJson(const {})
+          : CampusActivity.fromJson(activityJson),
       createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
     );
   }
@@ -604,6 +653,7 @@ class CampusNotificationRecord {
     required this.unread,
     this.actor,
     this.post,
+    this.group,
   });
 
   final String id;
@@ -616,10 +666,12 @@ class CampusNotificationRecord {
   final bool unread;
   final CampusUser? actor;
   final CampusPost? post;
+  final CampusGroup? group;
 
   factory CampusNotificationRecord.fromJson(Map<String, dynamic> json) {
     final actorJson = _readMap(json, 'actor');
     final postJson = _readMap(json, 'post');
+    final groupJson = _readMap(json, 'group');
     return CampusNotificationRecord(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
       category: _readString(json, 'category', fallback: 'notice'),
@@ -631,6 +683,7 @@ class CampusNotificationRecord {
       unread: json['unread'] == true,
       actor: actorJson == null ? null : CampusUser.fromJson(actorJson),
       post: postJson == null ? null : CampusPost.fromJson(postJson),
+      group: groupJson == null ? null : CampusGroup.fromJson(groupJson),
     );
   }
 }
@@ -719,7 +772,16 @@ class CampusGroup {
     required this.tags,
     required this.activities,
     required this.discussions,
+    this.announcementText = '',
+    this.announcementUpdatedAt = '',
+    this.announcementUpdatedBy,
+    this.pinnedDiscussionIds = const [],
+    this.visibility = 'approval',
     this.joined = false,
+    this.membershipRole = '',
+    this.membershipId = '',
+    this.membershipStatus = '',
+    this.canManage = false,
   });
 
   final String id;
@@ -732,7 +794,16 @@ class CampusGroup {
   final List<String> tags;
   final List<CampusActivity> activities;
   final List<CampusPost> discussions;
+  final String announcementText;
+  final String announcementUpdatedAt;
+  final CampusUser? announcementUpdatedBy;
+  final List<String> pinnedDiscussionIds;
+  final String visibility;
   final bool joined;
+  final String membershipRole;
+  final String membershipId;
+  final String membershipStatus;
+  final bool canManage;
 
   factory CampusGroup.fromJson(Map<String, dynamic> json) {
     return CampusGroup(
@@ -762,29 +833,111 @@ class CampusGroup {
         json,
         'discussions',
       ).map(CampusPost.fromJson).toList(growable: false),
+      announcementText: _readString(json, 'announcementText'),
+      announcementUpdatedAt: _readString(json, 'announcementUpdatedAt'),
+      announcementUpdatedBy: _readMap(json, 'announcementUpdatedBy') == null
+          ? null
+          : CampusUser.fromJson(_readMap(json, 'announcementUpdatedBy')!),
+      pinnedDiscussionIds: _readStringList(json, 'pinnedDiscussionIds'),
+      visibility: _readString(json, 'visibility', fallback: 'approval'),
       joined: json['joined'] == true,
+      membershipRole: _readString(json, 'membershipRole'),
+      membershipId: _readString(json, 'membershipId'),
+      membershipStatus: _readString(json, 'membershipStatus'),
+      canManage: json['canManage'] == true,
     );
   }
 
   CampusGroup copyWith({
     String? id,
+    String? name,
+    String? coverUrl,
+    String? iconUrl,
+    String? description,
     int? members,
+    int? admins,
+    List<String>? tags,
     List<CampusActivity>? activities,
     List<CampusPost>? discussions,
+    String? announcementText,
+    String? announcementUpdatedAt,
+    CampusUser? announcementUpdatedBy,
+    List<String>? pinnedDiscussionIds,
+    String? visibility,
     bool? joined,
+    String? membershipRole,
+    String? membershipId,
+    String? membershipStatus,
+    bool? canManage,
   }) {
     return CampusGroup(
       id: id ?? this.id,
-      name: name,
-      coverUrl: coverUrl,
-      iconUrl: iconUrl,
-      description: description,
+      name: name ?? this.name,
+      coverUrl: coverUrl ?? this.coverUrl,
+      iconUrl: iconUrl ?? this.iconUrl,
+      description: description ?? this.description,
       members: members ?? this.members,
-      admins: admins,
-      tags: tags,
+      admins: admins ?? this.admins,
+      tags: tags ?? this.tags,
       activities: activities ?? this.activities,
       discussions: discussions ?? this.discussions,
+      announcementText: announcementText ?? this.announcementText,
+      announcementUpdatedAt:
+          announcementUpdatedAt ?? this.announcementUpdatedAt,
+      announcementUpdatedBy:
+          announcementUpdatedBy ?? this.announcementUpdatedBy,
+      pinnedDiscussionIds: pinnedDiscussionIds ?? this.pinnedDiscussionIds,
+      visibility: visibility ?? this.visibility,
       joined: joined ?? this.joined,
+      membershipRole: membershipRole ?? this.membershipRole,
+      membershipId: membershipId ?? this.membershipId,
+      membershipStatus: membershipStatus ?? this.membershipStatus,
+      canManage: canManage ?? this.canManage,
+    );
+  }
+}
+
+class CampusGroupMember {
+  const CampusGroupMember({
+    required this.id,
+    required this.user,
+    required this.role,
+    required this.status,
+    required this.createdAt,
+    this.reviewedAt = '',
+    this.reviewedBy,
+  });
+
+  final String id;
+  final CampusUser user;
+  final String role;
+  final String status;
+  final String createdAt;
+  final String reviewedAt;
+  final CampusUser? reviewedBy;
+
+  factory CampusGroupMember.fromJson(Map<String, dynamic> json) {
+    final userJson = _readMap(json, 'user');
+    final reviewedByJson = _readMap(json, 'reviewedBy');
+    return CampusGroupMember(
+      id: _readString(json, 'id', fallback: _readString(json, '_id')),
+      user: userJson == null
+          ? const CampusUser(
+              name: '校园同学',
+              school: '未知学院',
+              major: '未填写专业',
+              grade: '未填写年级',
+              avatarUrl: 'https://i.pravatar.cc/180?img=1',
+              bio: '',
+            )
+          : CampusUser.fromJson(userJson),
+      role: _readString(json, 'role', fallback: 'member'),
+      status: _readString(json, 'status', fallback: 'active'),
+      createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
+      reviewedAt: _readString(json, 'reviewedAt'),
+      reviewedBy: reviewedByJson == null
+          ? null
+          : CampusUser.fromJson(reviewedByJson),
     );
   }
 }

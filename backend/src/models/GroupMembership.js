@@ -19,6 +19,14 @@ const groupMembershipSchema = new mongoose.Schema(
       enum: ['member', 'admin', 'owner'],
       default: 'member',
     },
+    status: {
+      type: String,
+      enum: ['pending', 'active', 'rejected'],
+      default: 'active',
+      index: true,
+    },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    reviewedAt: { type: Date },
   },
   { timestamps: true }
 );

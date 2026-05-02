@@ -772,37 +772,106 @@ class _ActivityTag extends StatelessWidget {
 }
 
 class _JoinActivityButton extends StatelessWidget {
-  const _JoinActivityButton();
+  const _JoinActivityButton({
+    this.label = '报名参加',
+    this.color = AppColors.green,
+    this.isLoading = false,
+  });
+
+  final String label;
+  final Color color;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: AppColors.green,
+        color: color,
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
-            color: AppColors.green.withValues(alpha: 0.25),
+            color: color.withValues(alpha: 0.25),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: const Text(
-        '报名参加',
-        maxLines: 1,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isLoading) ...[
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 5),
+          ],
+          Text(
+            label,
+            maxLines: 1,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineInteractionButton extends StatelessWidget {
+  const _InlineInteractionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.color = AppColors.text,
+    this.isLoading = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: isLoading ? null : onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isLoading)
+              SizedBox(
+                width: 17,
+                height: 17,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            else
+              Icon(icon, color: color, size: 21),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w700),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class CommunityScreen extends StatelessWidget {
+class CommunityScreen extends StatefulWidget {
   const CommunityScreen({
     required this.feed,
     required this.onRefresh,
@@ -813,20 +882,60 @@ class CommunityScreen extends StatelessWidget {
   final Future<void> Function() onRefresh;
 
   @override
+  State<CommunityScreen> createState() => _CommunityScreenState();
+}
+
+class _CommunityScreenState extends State<CommunityScreen> {
+  CampusDiscover? _discover;
+  var _isLoadingDiscover = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDiscover();
+  }
+
+  Future<void> _loadDiscover() async {
+    setState(() => _isLoadingDiscover = true);
+    final discover = await CampusRepository.instance.fetchDiscover();
+    if (!mounted) return;
+    setState(() {
+      _discover = discover;
+      _isLoadingDiscover = false;
+    });
+  }
+
+  Future<void> _refresh() async {
+    await widget.onRefresh();
+    await _loadDiscover();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final topicNames = feed.topics.isEmpty
+    final feed = widget.feed;
+    final discover = _discover ?? CampusDiscover.fromFeed(feed);
+    final topics = discover.featuredTopics.isEmpty
+        ? feed.topics
+        : discover.featuredTopics;
+    final groups = discover.recommendedGroups.isEmpty
+        ? feed.groups
+        : discover.recommendedGroups;
+    final posts = discover.trendingPosts.isEmpty
+        ? feed.posts
+        : discover.trendingPosts;
+    final topicNames = topics.isEmpty
         ? hotTopics
-        : feed.topics
+        : topics
               .map((topic) => topic.name)
               .followedBy(hotTopics)
               .toSet()
               .take(4)
               .toList(growable: false);
-    final selectedTopic = feed.topics.isEmpty ? campusTopic : feed.topics.first;
-    final selectedGroup = feed.groups.isEmpty
-        ? programmingGroup
-        : feed.groups.first;
-    final discussionPosts = feed.posts.take(3).toList(growable: false);
+    final selectedTopic = topics.isEmpty ? campusTopic : topics.first;
+    final recommendedGroups = groups.isEmpty
+        ? [programmingGroup]
+        : groups.take(3).toList(growable: false);
+    final discussionPosts = posts.take(3).toList(growable: false);
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -849,7 +958,7 @@ class CommunityScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const PublishPostScreen()),
               );
               if (created == true) {
-                await onRefresh();
+                await _refresh();
               }
             },
             icon: const Icon(Icons.edit_square),
@@ -857,10 +966,11 @@ class CommunityScreen extends StatelessWidget {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: onRefresh,
+        onRefresh: _refresh,
         child: ListView(
           padding: const EdgeInsets.only(bottom: 92),
           children: [
+            if (_isLoadingDiscover) const LinearProgressIndicator(minHeight: 2),
             const SectionTitle(
               title: '热门话题',
               padding: EdgeInsets.fromLTRB(18, 4, 18, 12),
@@ -929,27 +1039,18 @@ class CommunityScreen extends StatelessWidget {
               child: CampusCard(
                 child: Column(
                   children: [
-                    _GroupTile(
-                      group: selectedGroup,
-                      subtitle: '${selectedGroup.members}人 · 摄影交流',
-                      imageUser: feed.users.length > 1 ? feed.users[1] : kexin,
-                    ),
-                    const Divider(),
-                    _GroupTile(
-                      group: selectedGroup,
-                      name: '跑步俱乐部',
-                      subtitle: '512人 · 活动健康',
-                      imageUser: feed.users.length > 2 ? feed.users[2] : zihao,
-                    ),
-                    const Divider(),
-                    _GroupTile(
-                      group: selectedGroup,
-                      name: selectedGroup.name,
-                      subtitle: '${selectedGroup.members}人 · 技术交流',
-                      imageUser: feed.users.isNotEmpty
-                          ? feed.users.first
-                          : xiaobei,
-                    ),
+                    for (var i = 0; i < recommendedGroups.length; i++) ...[
+                      _GroupTile(
+                        group: recommendedGroups[i],
+                        name: recommendedGroups[i].name,
+                        subtitle:
+                            '${recommendedGroups[i].members}人 · ${recommendedGroups[i].tags.take(2).join(' / ')}',
+                        imageUser: feed.users.length > i
+                            ? feed.users[i]
+                            : xiaobei,
+                      ),
+                      if (i != recommendedGroups.length - 1) const Divider(),
+                    ],
                   ],
                 ),
               ),
@@ -1293,6 +1394,7 @@ class _MessageEntry {
     required this.firstLine,
     required this.badgeIcon,
     required this.badgeColor,
+    this.id = '',
     this.user,
     this.secondLine,
     this.systemIcon,
@@ -1303,6 +1405,7 @@ class _MessageEntry {
   factory _MessageEntry.fromNotification(CampusNotificationRecord record) {
     final actor = record.actor;
     return _MessageEntry(
+      id: record.id,
       user: actor,
       title: actor?.name ?? record.title,
       time: record.createdAt,
@@ -1317,6 +1420,7 @@ class _MessageEntry {
   }
 
   final CampusUser? user;
+  final String id;
   final String title;
   final String time;
   final String firstLine;
@@ -1337,6 +1441,9 @@ class _MessageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return CampusCard(
       onTap: () {
+        if (entry.id.isNotEmpty && entry.unread) {
+          CampusRepository.instance.markNotificationRead(entry.id).ignore();
+        }
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1783,12 +1890,14 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   List<CampusChatMessage> _messages = const [];
+  late String _conversationId;
   var _isLoading = false;
   var _isSending = false;
 
   @override
   void initState() {
     super.initState();
+    _conversationId = widget.conversationId;
     _loadMessages();
   }
 
@@ -1799,11 +1908,11 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadMessages() async {
-    if (widget.conversationId.isEmpty) return;
+    if (_conversationId.isEmpty) return;
     setState(() => _isLoading = true);
     try {
       final messages = await CampusRepository.instance
-          .fetchConversationMessages(widget.conversationId);
+          .fetchConversationMessages(_conversationId);
       if (mounted) setState(() => _messages = messages);
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
@@ -1816,15 +1925,16 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSending) return;
 
-    if (widget.conversationId.isEmpty) {
-      _showShellMessage(context, '这条会话暂未同步到后端');
-      return;
-    }
-
     setState(() => _isSending = true);
     try {
+      if (_conversationId.isEmpty) {
+        final conversation = await CampusRepository.instance.startConversation(
+          widget.contact,
+        );
+        _conversationId = conversation.id;
+      }
       final message = await CampusRepository.instance.sendConversationMessage(
-        conversationId: widget.conversationId,
+        conversationId: _conversationId,
         text: text,
       );
       _messageController.clear();
@@ -1840,7 +1950,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messageWidgets = widget.conversationId.isNotEmpty
+    final messageWidgets = _conversationId.isNotEmpty
         ? _messages
               .map(
                 (message) => message.isMine
@@ -2478,12 +2588,14 @@ class _NoticeEntry {
     required this.firstLine,
     required this.icon,
     required this.color,
+    this.id = '',
     this.secondLine,
     this.unread = false,
   });
 
   factory _NoticeEntry.fromNotification(CampusNotificationRecord record) {
     return _NoticeEntry(
+      id: record.id,
       title: record.title,
       time: record.createdAt,
       firstLine: record.firstLine,
@@ -2495,6 +2607,7 @@ class _NoticeEntry {
   }
 
   final String title;
+  final String id;
   final String time;
   final String firstLine;
   final String? secondLine;
@@ -2512,6 +2625,9 @@ class _NoticeMessageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return CampusCard(
       onTap: () {
+        if (entry.id.isNotEmpty && entry.unread) {
+          CampusRepository.instance.markNotificationRead(entry.id).ignore();
+        }
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -2683,6 +2799,10 @@ Color _messageBadgeColorFor(String action) {
 }
 
 IconData _noticeIconFor(String action) {
+  if (action.contains('group_join')) return Icons.how_to_reg_rounded;
+  if (action.contains('group_announcement')) return Icons.campaign_rounded;
+  if (action.contains('group_activity')) return Icons.event_available_rounded;
+  if (action.contains('group')) return Icons.groups_2_rounded;
   if (action.contains('activity')) return Icons.assignment_turned_in_rounded;
   if (action.contains('system')) return Icons.campaign_rounded;
   if (action.contains('verify')) return Icons.how_to_reg_rounded;
@@ -2690,6 +2810,11 @@ IconData _noticeIconFor(String action) {
 }
 
 Color _noticeColorFor(String action) {
+  if (action.contains('group_join_rejected')) return AppColors.red;
+  if (action.contains('group_join')) return AppColors.orange;
+  if (action.contains('group_announcement')) return AppColors.purple;
+  if (action.contains('group_activity')) return AppColors.green;
+  if (action.contains('group')) return AppColors.blue;
   if (action.contains('activity')) return AppColors.green;
   if (action.contains('system')) return AppColors.purple;
   if (action.contains('verify')) return AppColors.orange;
@@ -4984,6 +5109,38 @@ class _UserProfileHeader extends StatelessWidget {
 
   final CampusUser user;
 
+  Future<void> _openChat(BuildContext context) async {
+    try {
+      final conversation = await CampusRepository.instance.startConversation(
+        user,
+      );
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            contact: conversation.contact.id.isEmpty
+                ? user
+                : conversation.contact,
+            conversationId: conversation.id,
+            displayName: user.name,
+            online: true,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ChatScreen(contact: user, displayName: user.name, online: true),
+        ),
+      );
+      _showShellMessage(context, _shellError(error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
@@ -5085,29 +5242,43 @@ class _UserProfileHeader extends StatelessWidget {
           Positioned(
             top: panelTop + 18,
             right: sidePadding,
-            child: OutlinedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.add, size: 19),
-              label: const Text('关注'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.blue,
-                side: const BorderSide(color: AppColors.blue),
-                minimumSize: const Size(82, 38),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+            child: Row(
+              children: [
+                IconButton.filledTonal(
+                  tooltip: '发消息',
+                  onPressed: () => _openChat(context),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.blue.withValues(alpha: 0.1),
+                    foregroundColor: AppColors.blue,
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
                 ),
-                textStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.add, size: 19),
+                  label: const Text('关注'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.blue,
+                    side: const BorderSide(color: AppColors.blue),
+                    minimumSize: const Size(82, 38),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
           Positioned(
             top: panelTop + 17,
             left: infoInset,
-            right: 112,
+            right: 154,
             child: FittedBox(
               alignment: Alignment.centerLeft,
               fit: BoxFit.scaleDown,
@@ -5832,10 +6003,16 @@ class _MyFavoritesScreen extends StatelessWidget {
                       _FavoritePostCard(user: user)
                     else
                       for (final record in records) ...[
-                        _SavedPostTile.fromPost(
-                          post: record.post,
-                          savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
-                        ),
+                        if (record.kind == 'activity')
+                          _SavedActivityTile.fromActivity(
+                            activity: record.activity,
+                            savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
+                          )
+                        else
+                          _SavedPostTile.fromPost(
+                            post: record.post,
+                            savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
+                          ),
                         const SizedBox(height: 12),
                       ],
                     if (records.isEmpty) ...[
@@ -5947,6 +6124,9 @@ class _FavoritePostsScreen extends StatelessWidget {
         future: CampusRepository.instance.fetchFavorites(),
         builder: (context, snapshot) {
           final records = snapshot.data ?? const <CampusFavoriteRecord>[];
+          final postRecords = records
+              .where((record) => record.kind == 'post')
+              .toList(growable: false);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             children: [
@@ -5955,10 +6135,10 @@ class _FavoritePostsScreen extends StatelessWidget {
                 compact: true,
               ),
               const SizedBox(height: 14),
-              if (records.isEmpty)
+              if (postRecords.isEmpty)
                 ..._fallbackSavedPostTiles()
               else
-                for (final record in records) ...[
+                for (final record in postRecords) ...[
                   _SavedPostTile.fromPost(
                     post: record.post,
                     savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
@@ -6943,7 +7123,7 @@ class _RelationUserCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 9),
-              const _MessageActionButton(),
+              _MessageActionButton(user: user),
             ],
           ),
         ],
@@ -6993,37 +7173,74 @@ class _RelationActionButton extends StatelessWidget {
 }
 
 class _MessageActionButton extends StatelessWidget {
-  const _MessageActionButton();
+  const _MessageActionButton({required this.user});
+
+  final CampusUser user;
+
+  Future<void> _openChat(BuildContext context) async {
+    try {
+      final conversation = await CampusRepository.instance.startConversation(
+        user,
+      );
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            contact: conversation.contact.id.isEmpty
+                ? user
+                : conversation.contact,
+            conversationId: conversation.id,
+            displayName: user.name,
+            online: true,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ChatScreen(contact: user, displayName: user.name, online: true),
+        ),
+      );
+      _showShellMessage(context, _shellError(error));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 34,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.blue, width: 1.2),
-      ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.chat_bubble_outline_rounded,
-            color: AppColors.blue,
-            size: 16,
-          ),
-          SizedBox(width: 4),
-          Text(
-            '发消息',
-            style: TextStyle(
+    return GestureDetector(
+      onTap: () => _openChat(context),
+      child: Container(
+        width: 88,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.blue, width: 1.2),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline_rounded,
               color: AppColors.blue,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+              size: 16,
             ),
-          ),
-        ],
+            SizedBox(width: 4),
+            Text(
+              '发消息',
+              style: TextStyle(
+                color: AppColors.blue,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -7408,6 +7625,95 @@ class _SavedPostTile extends StatelessWidget {
                       value: comments,
                     ),
                   ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SavedActivityTile extends StatelessWidget {
+  const _SavedActivityTile({required this.activity, required this.savedAt});
+
+  final CampusActivity activity;
+  final String savedAt;
+
+  factory _SavedActivityTile.fromActivity({
+    required CampusActivity activity,
+    required String savedAt,
+  }) {
+    return _SavedActivityTile(activity: activity, savedAt: savedAt);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.all(12),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ActivityDetailScreen(activity: activity),
+          ),
+        );
+      },
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SmartImage(
+            url: activity.posterUrl,
+            width: 132,
+            height: 108,
+            borderRadius: 10,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const _CompactBadge(label: '活动', color: AppColors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        activity.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  activity.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 14,
+                    height: 1.38,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '${activity.date} ${activity.time} · ${activity.location}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  savedAt,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
                 ),
               ],
             ),
@@ -9359,13 +9665,79 @@ class _AlbumSectionView extends StatelessWidget {
   }
 }
 
-class PostFeedCard extends StatelessWidget {
+class PostFeedCard extends StatefulWidget {
   const PostFeedCard({required this.post, super.key});
 
   final CampusPost post;
 
   @override
+  State<PostFeedCard> createState() => _PostFeedCardState();
+}
+
+class _PostFeedCardState extends State<PostFeedCard> {
+  late CampusPost _post = widget.post;
+  var _liked = false;
+  var _favorited = false;
+  var _isLiking = false;
+  var _isFavoriting = false;
+
+  Future<void> _toggleLike() async {
+    if (_isLiking) return;
+    setState(() => _isLiking = true);
+    final previousPost = _post;
+    final previousLiked = _liked;
+    setState(() {
+      _liked = !_liked;
+      final nextLikes = _post.likes + (_liked ? 1 : -1);
+      _post = _post.copyWith(likes: nextLikes < 0 ? 0 : nextLikes);
+    });
+    try {
+      final post = await CampusRepository.instance.togglePostLike(previousPost);
+      if (mounted) setState(() => _post = post);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _post = previousPost;
+        _liked = previousLiked;
+      });
+      _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isLiking = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isFavoriting) return;
+    setState(() => _isFavoriting = true);
+    final previousPost = _post;
+    final previousFavorited = _favorited;
+    setState(() {
+      _favorited = !_favorited;
+      final nextSaves = _post.saves + (_favorited ? 1 : -1);
+      _post = _post.copyWith(saves: nextSaves < 0 ? 0 : nextSaves);
+    });
+    try {
+      final post = await CampusRepository.instance.togglePostFavorite(
+        previousPost,
+      );
+      if (!mounted) return;
+      setState(() => _post = post);
+      _showShellMessage(context, _favorited ? '已收藏' : '已取消收藏');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _post = previousPost;
+        _favorited = previousFavorited;
+      });
+      _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isFavoriting = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final post = _post;
     return CampusCard(
       onTap: () {
         Navigator.push(
@@ -9434,13 +9806,36 @@ class PostFeedCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(Icons.favorite, color: AppColors.red, size: 21),
-              const SizedBox(width: 4),
-              Text('${post.likes}'),
-              const SizedBox(width: 22),
-              const Icon(Icons.mode_comment_outlined, size: 21),
-              const SizedBox(width: 4),
-              Text('${post.comments}'),
+              _InlineInteractionButton(
+                icon: _liked ? Icons.favorite : Icons.favorite_border_rounded,
+                label: '${post.likes}',
+                color: _liked ? AppColors.red : AppColors.text,
+                isLoading: _isLiking,
+                onTap: _toggleLike,
+              ),
+              const SizedBox(width: 12),
+              _InlineInteractionButton(
+                icon: Icons.mode_comment_outlined,
+                label: '${post.comments}',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostDetailScreen(post: post),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 12),
+              _InlineInteractionButton(
+                icon: _favorited
+                    ? Icons.star_rounded
+                    : Icons.star_border_rounded,
+                label: '${post.saves}',
+                color: _favorited ? AppColors.orange : AppColors.text,
+                isLoading: _isFavoriting,
+                onTap: _toggleFavorite,
+              ),
               const Spacer(),
               const Icon(Icons.ios_share_rounded, size: 21),
             ],
@@ -9451,13 +9846,65 @@ class PostFeedCard extends StatelessWidget {
   }
 }
 
-class ActivityListCard extends StatelessWidget {
+class ActivityListCard extends StatefulWidget {
   const ActivityListCard({required this.activity, super.key});
 
   final CampusActivity activity;
 
   @override
+  State<ActivityListCard> createState() => _ActivityListCardState();
+}
+
+class _ActivityListCardState extends State<ActivityListCard> {
+  late CampusActivity _activity = widget.activity;
+  var _isRegistered = false;
+  var _isJoining = false;
+  var _isFavorite = false;
+  var _isFavoriting = false;
+
+  Future<void> _toggleRegistration() async {
+    if (_isJoining) return;
+    setState(() => _isJoining = true);
+    try {
+      final nextActivity = _isRegistered
+          ? await CampusRepository.instance.cancelActivityJoin(_activity)
+          : await CampusRepository.instance.joinActivity(_activity);
+      if (!mounted) return;
+      setState(() {
+        _activity = nextActivity;
+        _isRegistered = !_isRegistered;
+      });
+      _showShellMessage(context, _isRegistered ? '报名成功' : '已取消报名');
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isJoining = false);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isFavoriting) return;
+    setState(() => _isFavoriting = true);
+    final previousFavorite = _isFavorite;
+    setState(() => _isFavorite = !_isFavorite);
+    try {
+      final nextActivity = await CampusRepository.instance
+          .toggleActivityFavorite(_activity);
+      if (!mounted) return;
+      setState(() => _activity = nextActivity);
+      _showShellMessage(context, _isFavorite ? '已收藏活动' : '已取消收藏');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isFavorite = previousFavorite);
+      _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isFavoriting = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final activity = _activity;
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -9557,20 +10004,41 @@ class ActivityListCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   IconButton(
-                    onPressed: () {},
+                    onPressed: _isFavoriting ? null : _toggleFavorite,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(
                       width: 31,
                       height: 31,
                     ),
-                    icon: const Icon(
-                      Icons.star_border_rounded,
-                      color: Color(0xFF7D8898),
-                      size: 29,
-                    ),
+                    icon: _isFavoriting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _isFavorite
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            color: _isFavorite
+                                ? AppColors.orange
+                                : const Color(0xFF7D8898),
+                            size: 29,
+                          ),
                   ),
                   const Spacer(),
-                  const _JoinActivityButton(),
+                  GestureDetector(
+                    onTap: _toggleRegistration,
+                    child: _JoinActivityButton(
+                      label: _isJoining
+                          ? '处理中'
+                          : _isRegistered
+                          ? '已报名'
+                          : '报名参加',
+                      color: _isRegistered ? AppColors.blue : AppColors.green,
+                      isLoading: _isJoining,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -9712,13 +10180,42 @@ class _StoryItem extends StatelessWidget {
   }
 }
 
-class _FriendCard extends StatelessWidget {
+class _FriendCard extends StatefulWidget {
   const _FriendCard({required this.user});
 
   final CampusUser user;
 
   @override
+  State<_FriendCard> createState() => _FriendCardState();
+}
+
+class _FriendCardState extends State<_FriendCard> {
+  late CampusUser _user = widget.user;
+  var _isFollowing = false;
+
+  Future<void> _toggleFollow() async {
+    if (_isFollowing) return;
+    setState(() => _isFollowing = true);
+    try {
+      final nextUser = _user.followedByMe
+          ? await CampusRepository.instance.unfollowUser(_user)
+          : await CampusRepository.instance.followUser(_user);
+      if (!mounted) return;
+      setState(() => _user = nextUser);
+      _showShellMessage(
+        context,
+        nextUser.followedByMe ? '已关注 ${nextUser.name}' : '已取消关注',
+      );
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isFollowing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = _user;
     return CampusCard(
       onTap: () {
         Navigator.push(
@@ -9742,14 +10239,20 @@ class _FriendCard extends StatelessWidget {
           SizedBox(
             height: 30,
             child: FilledButton(
-              onPressed: () {},
+              onPressed: _isFollowing ? null : _toggleFollow,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(999),
                 ),
               ),
-              child: const Text('关注'),
+              child: Text(
+                _isFollowing
+                    ? '处理中'
+                    : user.followedByMe
+                    ? '已关注'
+                    : '关注',
+              ),
             ),
           ),
         ],
@@ -9803,7 +10306,7 @@ class _TopicTile extends StatelessWidget {
   }
 }
 
-class _GroupTile extends StatelessWidget {
+class _GroupTile extends StatefulWidget {
   const _GroupTile({
     required this.group,
     required this.subtitle,
@@ -9817,23 +10320,56 @@ class _GroupTile extends StatelessWidget {
   final CampusUser imageUser;
 
   @override
+  State<_GroupTile> createState() => _GroupTileState();
+}
+
+class _GroupTileState extends State<_GroupTile> {
+  late CampusGroup _group = widget.group;
+  var _isSubmitting = false;
+
+  Future<void> _toggleJoin() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final nextGroup = _group.joined
+          ? await CampusRepository.instance.leaveGroup(_group)
+          : await CampusRepository.instance.joinGroup(_group);
+      if (!mounted) return;
+      setState(() => _group = nextGroup);
+      if (nextGroup.membershipStatus == 'pending') {
+        _showShellMessage(context, '入群申请已提交，等待管理员审核');
+      } else {
+        _showShellMessage(
+          context,
+          nextGroup.joined ? '已加入 ${nextGroup.name}' : '已退出 ${nextGroup.name}',
+        );
+      }
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  String get _buttonLabel {
+    if (_isSubmitting) return '处理中';
+    if (_group.membershipStatus == 'pending') return '审核中';
+    if (_group.joined) return '已加入';
+    return '加入';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final group = _group;
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: CampusAvatar(user: imageUser, size: 46),
-      title: Text(name ?? '摄影爱好者联盟'),
-      subtitle: Text(subtitle),
+      leading: CampusAvatar(user: widget.imageUser, size: 46),
+      title: Text(widget.name ?? '摄影爱好者联盟'),
+      subtitle: Text(widget.subtitle),
       trailing: FilledButton(
-        onPressed: () async {
-          try {
-            final nextGroup = await CampusRepository.instance.joinGroup(group);
-            if (context.mounted) {
-              _showShellMessage(context, '已加入 ${nextGroup.name}');
-            }
-          } catch (error) {
-            if (context.mounted) _showShellMessage(context, _shellError(error));
-          }
-        },
+        onPressed: _group.membershipStatus == 'pending' || _isSubmitting
+            ? null
+            : _toggleJoin,
         style: FilledButton.styleFrom(
           minimumSize: const Size(66, 34),
           padding: EdgeInsets.zero,
@@ -9841,7 +10377,7 @@ class _GroupTile extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
           ),
         ),
-        child: Text(group.joined ? '已加入' : '加入'),
+        child: Text(_buttonLabel),
       ),
       onTap: () {
         Navigator.push(

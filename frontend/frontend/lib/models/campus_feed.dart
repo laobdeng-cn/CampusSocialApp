@@ -26,6 +26,58 @@ class CampusFeed {
   }
 }
 
+class CampusDiscover {
+  const CampusDiscover({
+    required this.hotSearches,
+    required this.trendingPosts,
+    required this.upcomingActivities,
+    required this.recommendedGroups,
+    required this.featuredTopics,
+  });
+
+  final List<String> hotSearches;
+  final List<CampusPost> trendingPosts;
+  final List<CampusActivity> upcomingActivities;
+  final List<CampusGroup> recommendedGroups;
+  final List<CampusTopic> featuredTopics;
+
+  factory CampusDiscover.fromJson(Map<String, dynamic> json) {
+    return CampusDiscover(
+      hotSearches: _readStringList(json, 'hotSearches'),
+      trendingPosts: _readTypedList(json, 'trendingPosts', CampusPost.fromJson),
+      upcomingActivities: _readTypedList(
+        json,
+        'upcomingActivities',
+        CampusActivity.fromJson,
+      ),
+      recommendedGroups: _readTypedList(
+        json,
+        'recommendedGroups',
+        CampusGroup.fromJson,
+      ),
+      featuredTopics: _readTypedList(
+        json,
+        'featuredTopics',
+        CampusTopic.fromJson,
+      ),
+    );
+  }
+
+  factory CampusDiscover.fromFeed(CampusFeed feed) {
+    return CampusDiscover(
+      hotSearches: [
+        ...feed.topics.map((topic) => topic.name),
+        ...feed.activities.map((activity) => activity.category),
+        ...feed.groups.expand((group) => group.tags),
+      ].where((item) => item.trim().isNotEmpty).toSet().take(8).toList(),
+      trendingPosts: feed.posts.take(6).toList(growable: false),
+      upcomingActivities: feed.activities.take(6).toList(growable: false),
+      recommendedGroups: feed.groups.take(6).toList(growable: false),
+      featuredTopics: feed.topics.take(6).toList(growable: false),
+    );
+  }
+}
+
 class CampusSearchResult {
   const CampusSearchResult({
     required this.users,
@@ -60,6 +112,12 @@ class CampusSearchResult {
       topics: _readTypedList(json, 'topics', CampusTopic.fromJson),
     );
   }
+}
+
+List<String> _readStringList(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! List) return const [];
+  return value.map((item) => item.toString()).toList(growable: false);
 }
 
 List<T> _readTypedList<T>(

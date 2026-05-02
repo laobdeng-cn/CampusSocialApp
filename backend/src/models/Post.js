@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const postSchema = new mongoose.Schema(
   {
     author: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', index: true },
     title: { type: String, required: true, trim: true },
     body: { type: String, required: true },
     topic: { type: String, required: true, index: true },
@@ -17,6 +18,7 @@ const postSchema = new mongoose.Schema(
       enum: ['public', 'friends', 'private'],
       default: 'public',
     },
+    pinnedInGroup: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

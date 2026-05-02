@@ -9,6 +9,10 @@ const groupSchema = new mongoose.Schema(
     members: { type: Number, default: 0 },
     admins: { type: Number, default: 0 },
     tags: [{ type: String }],
+    announcementText: { type: String, default: '' },
+    announcementUpdatedAt: { type: Date },
+    announcementUpdatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    pinnedDiscussionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
     activityIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Activity' }],
     discussionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
     visibility: {

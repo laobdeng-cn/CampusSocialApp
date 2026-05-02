@@ -11,6 +11,7 @@ const notificationSchema = new mongoose.Schema(
     actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     post: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' },
     activity: { type: mongoose.Schema.Types.ObjectId, ref: 'Activity' },
+    group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
     category: {
       type: String,
       enum: ['interaction', 'notice'],

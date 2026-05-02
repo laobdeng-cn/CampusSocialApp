@@ -1,4 +1,7 @@
 const express = require('express');
+const fs = require('fs');
+const multer = require('multer');
+const path = require('path');
 
 const { hashPassword, signToken, verifyPassword, verifyToken } = require('../auth');
 const { isMongoReady } = require('../db');
@@ -22,9 +25,36 @@ const User = require('../models/User');
 const seed = require('../data/seed');
 
 const router = express.Router();
+const uploadDir = path.join(__dirname, '..', '..', 'uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const imageStorage = multer.diskStorage({
+  destination: (_request, _file, callback) => callback(null, uploadDir),
+  filename: (_request, file, callback) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const safeExtension = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(extension)
+      ? extension
+      : '.jpg';
+    callback(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExtension}`);
+  },
+});
+const uploadImage = multer({
+  storage: imageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    if (!file.mimetype?.startsWith('image/')) {
+      callback(new Error('Only image uploads are allowed.'));
+      return;
+    }
+    callback(null, true);
+  },
+});
 
 function publicUser(user) {
   if (!user) return null;
+  if (typeof user !== 'object') {
+    return { id: String(user) };
+  }
   const plain = typeof user.toObject === 'function' ? user.toObject() : user;
   const { passwordHash, tokenVersion, ...safeUser } = plain;
   return {
@@ -36,9 +66,13 @@ function publicUser(user) {
 function serializePost(post) {
   if (!post) return null;
   const plain = typeof post.toObject === 'function' ? post.toObject() : post;
+  const { author, group, ...safePost } = plain;
   return {
-    ...plain,
+    ...safePost,
     id: String(plain._id || plain.id || ''),
+    author: publicUser(author),
+    groupId: String(group?._id || group || ''),
+    pinnedInGroup: plain.pinnedInGroup === true,
     createdAt: plain.createdAt instanceof Date
       ? plain.createdAt.toISOString()
       : plain.createdAt,
@@ -51,35 +85,89 @@ function serializeActivity(activity) {
   return {
     ...plain,
     id: String(plain._id || plain.id || ''),
+    createdBy: publicUser(plain.createdBy),
     createdAt: plain.createdAt instanceof Date
       ? plain.createdAt.toISOString()
       : plain.createdAt,
   };
 }
 
-function serializeGroup(group) {
+function serializeGroup(group, options = {}) {
   if (!group) return null;
   const plain = typeof group.toObject === 'function' ? group.toObject() : group;
+  const {
+    activityIds,
+    discussionIds,
+    announcementUpdatedBy,
+    pinnedDiscussionIds,
+    ...safeGroup
+  } = plain;
+  const pinnedIds = (plain.pinnedDiscussionIds || []).map((item) =>
+    String(item?._id || item || '')
+  );
+  const discussions = (plain.discussionIds || plain.discussions || [])
+    .map(serializePost)
+    .filter(Boolean)
+    .map((post) => ({
+      ...post,
+      pinnedInGroup: pinnedIds.includes(String(post.id)),
+    }))
+    .sort((left, right) => {
+      const leftPinned = pinnedIds.includes(String(left.id));
+      const rightPinned = pinnedIds.includes(String(right.id));
+      if (leftPinned === rightPinned) return 0;
+      return leftPinned ? -1 : 1;
+    });
   return {
-    ...plain,
+    ...safeGroup,
     id: String(plain._id || plain.id || ''),
     activities: (plain.activityIds || plain.activities || [])
       .map(serializeActivity)
       .filter(Boolean),
-    discussions: (plain.discussionIds || plain.discussions || [])
-      .map(serializePost)
-      .filter(Boolean),
+    discussions,
+    announcementText: plain.announcementText || '',
+    announcementUpdatedAt: plain.announcementUpdatedAt instanceof Date
+      ? plain.announcementUpdatedAt.toISOString()
+      : plain.announcementUpdatedAt,
+    announcementUpdatedBy: publicUser(announcementUpdatedBy),
+    pinnedDiscussionIds: pinnedIds,
+    joined: options.joined === true,
+    membershipRole: options.membershipRole || '',
+    membershipId: options.membershipId || '',
+    membershipStatus: options.membershipStatus || '',
+    canManage: options.canManage === true,
     createdAt: plain.createdAt instanceof Date
       ? plain.createdAt.toISOString()
       : plain.createdAt,
+  };
+}
+
+function serializeGroupMember(membership) {
+  if (!membership) return null;
+  const plain = typeof membership.toObject === 'function'
+    ? membership.toObject()
+    : membership;
+  return {
+    id: String(plain._id || plain.id || ''),
+    role: plain.role || 'member',
+    status: plain.status || 'active',
+    createdAt: plain.createdAt instanceof Date
+      ? plain.createdAt.toISOString()
+      : plain.createdAt,
+    reviewedAt: plain.reviewedAt instanceof Date
+      ? plain.reviewedAt.toISOString()
+      : plain.reviewedAt,
+    reviewedBy: publicUser(plain.reviewedBy),
+    user: publicUser(plain.user),
   };
 }
 
 function serializeTopic(topic) {
   if (!topic) return null;
   const plain = typeof topic.toObject === 'function' ? topic.toObject() : topic;
+  const { postIds, contributorIds, ...safeTopic } = plain;
   return {
-    ...plain,
+    ...safeTopic,
     id: String(plain._id || plain.id || ''),
     posts: (plain.postIds || plain.posts || [])
       .map(serializePost)
@@ -140,6 +228,7 @@ function serializeNotification(notification) {
     actor: publicUser(plain.actor),
     post: serializePost(plain.post),
     activity: serializeActivity(plain.activity),
+    group: serializeGroup(plain.group),
     createdAt: plain.createdAt instanceof Date
       ? plain.createdAt.toISOString()
       : plain.createdAt,
@@ -237,7 +326,7 @@ async function findPostOr404(postId, response) {
 }
 
 async function findActivityOr404(activityId, response) {
-  const activity = await Activity.findById(activityId);
+  const activity = await Activity.findById(activityId).populate('createdBy');
   if (!activity) {
     response.status(404).json({ message: '活动不存在' });
     return null;
@@ -256,6 +345,7 @@ async function findUserOr404(userId, response) {
 
 async function findGroupOr404(groupId, response) {
   const group = await Group.findById(groupId)
+    .populate('announcementUpdatedBy')
     .populate('activityIds')
     .populate({ path: 'discussionIds', populate: 'author' });
   if (!group) {
@@ -309,6 +399,85 @@ async function requireAuth(request, response, next) {
   }
 }
 
+async function resolveOptionalUser(request) {
+  const token = readBearerToken(request);
+  if (!token) return null;
+
+  try {
+    const payload = verifyToken(token);
+    if (!payload?.sub) return null;
+    const user = await User.findById(payload.sub);
+    if (!user || user.tokenVersion !== payload.tokenVersion) return null;
+    return user;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function findGroupMembership(groupId, userId) {
+  if (!groupId || !userId) return null;
+  return GroupMembership.findOne({
+    group: groupId,
+    user: userId,
+  });
+}
+
+async function findActiveGroupMembership(groupId, userId) {
+  if (!groupId || !userId) return null;
+  return GroupMembership.findOne({
+    group: groupId,
+    user: userId,
+    status: 'active',
+  });
+}
+
+async function findGroupManagerUserIds(groupId) {
+  const memberships = await GroupMembership.find({
+    group: groupId,
+    role: { $in: ['owner', 'admin'] },
+    status: 'active',
+  }).select('user');
+  return memberships.map((membership) => membership.user);
+}
+
+async function requireGroupManager(request, response, next) {
+  try {
+    const group = await findGroupOr404(request.params.id, response);
+    if (!group) return;
+
+    const membership = await findActiveGroupMembership(group._id, request.user._id);
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      response.status(403).json({ message: '你没有该社群的管理权限' });
+      return;
+    }
+
+    request.group = group;
+    request.groupMembership = membership;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function requireGroupMember(request, response, next) {
+  try {
+    const group = await findGroupOr404(request.params.id, response);
+    if (!group) return;
+
+    const membership = await findActiveGroupMembership(group._id, request.user._id);
+    if (!membership) {
+      response.status(403).json({ message: '请先加入社群后再参与讨论' });
+      return;
+    }
+
+    request.group = group;
+    request.groupMembership = membership;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 function issueAuthResponse(response, user) {
   const token = signToken({
     sub: String(user._id),
@@ -319,6 +488,79 @@ function issueAuthResponse(response, user) {
     token,
     user: publicUser(user),
   });
+}
+
+router.post('/uploads/image', requireAuth, uploadImage.single('image'), (request, response) => {
+  if (!request.file) {
+    response.status(400).json({ message: '请选择要上传的图片' });
+    return;
+  }
+
+  const url = `${request.protocol}://${request.get('host')}/uploads/${request.file.filename}`;
+  response.status(201).json({
+    url,
+    path: `/uploads/${request.file.filename}`,
+    filename: request.file.filename,
+    purpose: String(request.body.purpose || 'general'),
+  });
+});
+
+function generateCheckInCode() {
+  return `ACT${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
+async function createActivityNotifications({
+  recipientIds,
+  activity,
+  title,
+  firstLine,
+  secondLine = '',
+  action,
+  actor,
+}) {
+  const recipients = [...new Set(recipientIds.map((id) => String(id)).filter(Boolean))];
+  if (recipients.length === 0) return;
+
+  await Notification.insertMany(
+    recipients.map((recipient) => ({
+      recipient,
+      actor,
+      activity: activity?._id,
+      category: 'notice',
+      title,
+      firstLine,
+      secondLine,
+      action,
+      unread: true,
+    }))
+  );
+}
+
+async function createGroupNotifications({
+  recipientIds,
+  group,
+  title,
+  firstLine,
+  secondLine = '',
+  action,
+  actor,
+}) {
+  const recipients = [...new Set(recipientIds.map((id) => String(id)).filter(Boolean))];
+  if (recipients.length === 0) return;
+
+  await Notification.insertMany(
+    recipients.map((recipient) => ({
+      recipient,
+      actor,
+      group: group?._id || group,
+      category: 'notice',
+      title,
+      firstLine,
+      secondLine,
+      action,
+      unread: true,
+    }))
+  );
 }
 
 async function fromMongoOrSeed(model, seedData, options = {}) {
@@ -346,7 +588,11 @@ async function getFeedData() {
     fromMongoOrSeed(Post, seed.posts, { populate: 'author' }),
     fromMongoOrSeed(Activity, seed.activities),
     fromMongoOrSeed(Group, seed.groups, {
-      populate: ['activityIds', { path: 'discussionIds', populate: 'author' }],
+      populate: [
+        'announcementUpdatedBy',
+        'activityIds',
+        { path: 'discussionIds', populate: 'author' },
+      ],
     }),
     fromMongoOrSeed(Topic, seed.topics, {
       populate: [
@@ -362,6 +608,97 @@ async function getFeedData() {
     activities,
     groups,
     topics,
+  };
+}
+
+function readSearchTokens(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function matchesTokens(values, tokens) {
+  if (tokens.length === 0) return false;
+  const normalizedValues = values
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => String(value).toLowerCase());
+  return tokens.some((token) =>
+    normalizedValues.some((value) => value.includes(token))
+  );
+}
+
+function parsePositiveInt(value, fallback, max = 50) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(parsed, max);
+}
+
+function postScore(post) {
+  return Number(post.likes || 0) * 3
+    + Number(post.comments || 0) * 2
+    + Number(post.saves || 0)
+    + Number(post.shares || 0);
+}
+
+function activityScore(activity) {
+  return Number(activity.enrolled || 0) * 2 + Number(activity.capacity || 0) / 20;
+}
+
+function topicScore(topic) {
+  const discussions = Number.parseFloat(String(topic.discussions || '0').replace(/[^\d.]/g, ''));
+  return Number(topic.onlineCount || 0) + (Number.isFinite(discussions) ? discussions * 10 : 0);
+}
+
+function sortSearchItems(items, type, sort) {
+  const copy = [...items];
+  if (sort === 'popular') {
+    return copy.sort((left, right) => {
+      if (type === 'posts') return postScore(right) - postScore(left);
+      if (type === 'activities') return activityScore(right) - activityScore(left);
+      if (type === 'groups') return Number(right.members || 0) - Number(left.members || 0);
+      if (type === 'topics') return topicScore(right) - topicScore(left);
+      if (type === 'users') return Number(right.followers || 0) - Number(left.followers || 0);
+      return 0;
+    });
+  }
+  if (sort === 'latest') {
+    return copy.sort((left, right) => {
+      const rightTime = Date.parse(right.createdAt || '') || 0;
+      const leftTime = Date.parse(left.createdAt || '') || 0;
+      return rightTime - leftTime;
+    });
+  }
+  return copy;
+}
+
+function buildDiscoverPayload(feed, limit = 6) {
+  const hotSearches = [
+    ...feed.topics.map((topic) => topic.name),
+    ...feed.activities.map((activity) => activity.category),
+    ...feed.groups.flatMap((group) => group.tags || []),
+    ...feed.posts.map((post) => post.topic),
+  ]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .filter((item, index, source) => source.indexOf(item) === index)
+    .slice(0, 8);
+
+  return {
+    hotSearches,
+    trendingPosts: [...feed.posts]
+      .sort((left, right) => postScore(right) - postScore(left))
+      .slice(0, limit),
+    upcomingActivities: [...feed.activities]
+      .sort((left, right) => activityScore(right) - activityScore(left))
+      .slice(0, limit),
+    recommendedGroups: [...feed.groups]
+      .sort((left, right) => Number(right.members || 0) - Number(left.members || 0))
+      .slice(0, limit),
+    featuredTopics: [...feed.topics]
+      .sort((left, right) => topicScore(right) - topicScore(left))
+      .slice(0, limit),
   };
 }
 
@@ -532,7 +869,9 @@ router.get('/users', async (_request, response, next) => {
 
 router.get('/posts', async (_request, response, next) => {
   try {
-    response.json(await fromMongoOrSeed(Post, seed.posts, { populate: 'author' }));
+    response.json(
+      await fromMongoOrSeed(Post, seed.posts, { populate: ['author', 'group'] })
+    );
   } catch (error) {
     next(error);
   }
@@ -589,7 +928,7 @@ router.post('/posts', requireAuth, async (request, response, next) => {
       images,
     });
 
-    const populated = await Post.findById(post._id).populate('author');
+    const populated = await Post.findById(post._id).populate('author').populate('group');
     response.status(201).json({ post: serializePost(populated) });
   } catch (error) {
     next(error);
@@ -630,7 +969,11 @@ router.post('/posts/:id/favorite', requireAuth, async (request, response, next) 
       await existing.deleteOne();
       post.saves = Math.max(0, post.saves - 1);
     } else {
-      await Favorite.create({ post: post._id, user: request.user._id });
+      await Favorite.create({
+        kind: 'post',
+        post: post._id,
+        user: request.user._id,
+      });
       post.saves += 1;
     }
 
@@ -685,7 +1028,10 @@ router.delete('/posts/:id', requireAuth, async (request, response, next) => {
       Favorite.deleteMany({ post: post._id }),
       Notification.deleteMany({ post: post._id }),
       BrowsingHistory.deleteMany({ kind: 'post', refId: post._id }),
-      Group.updateMany({ discussionIds: post._id }, { $pull: { discussionIds: post._id } }),
+      Group.updateMany(
+        { discussionIds: post._id },
+        { $pull: { discussionIds: post._id, pinnedDiscussionIds: post._id } }
+      ),
       Topic.updateMany({ postIds: post._id }, { $pull: { postIds: post._id } }),
       post.deleteOne(),
     ]);
@@ -700,16 +1046,18 @@ router.get('/me/favorites', requireAuth, async (request, response, next) => {
   try {
     const favorites = await Favorite.find({ user: request.user._id })
       .populate({ path: 'post', populate: 'author' })
+      .populate('activity')
       .sort({ createdAt: -1 })
       .lean();
 
     response.json({
       favorites: favorites
-        .filter((favorite) => favorite.post)
+        .filter((favorite) => favorite.post || favorite.activity)
         .map((favorite) => ({
           id: String(favorite._id),
-          kind: 'post',
+          kind: favorite.activity ? 'activity' : 'post',
           post: serializePost(favorite.post),
+          activity: serializeActivity(favorite.activity),
           createdAt: favorite.createdAt instanceof Date
             ? favorite.createdAt.toISOString()
             : favorite.createdAt,
@@ -906,6 +1254,64 @@ router.post('/posts/:id/comments', requireAuth, async (request, response, next) 
   }
 });
 
+router.post('/activities', requireAuth, async (request, response, next) => {
+  try {
+    const title = String(request.body.title || '').trim();
+    const category = String(request.body.category || '校园活动').trim();
+    const posterUrl = String(request.body.posterUrl || '').trim()
+      || 'asset:assets/images/activity_stage_blue.png';
+    const date = String(request.body.date || '').trim();
+    const time = String(request.body.time || '').trim();
+    const location = String(request.body.location || '').trim();
+    const host = String(request.body.host || '').trim();
+    const description = String(request.body.description || '').trim();
+
+    if (!title || !date || !time || !location || !host || !description) {
+      response.status(400).json({ message: '请完整填写活动信息' });
+      return;
+    }
+
+    const capacity = Math.max(1, Number(request.body.capacity || 0) || 0);
+    const activity = await Activity.create({
+      createdBy: request.user._id,
+      title,
+      category,
+      posterUrl,
+      date,
+      time,
+      location,
+      host,
+      capacity,
+      price: String(request.body.price || '免费').trim() || '免费',
+      description,
+      checkInCode: String(request.body.checkInCode || 'CAMPUS2026').trim() || 'CAMPUS2026',
+      allowComments: request.body.allowComments !== false,
+      publicDisplay: request.body.publicDisplay !== false,
+      registrationDeadline: String(request.body.registrationDeadline || '').trim(),
+      tags: Array.isArray(request.body.tags)
+        ? request.body.tags.filter((item) => typeof item === 'string' && item.trim())
+        : [],
+    });
+
+    await activity.populate('createdBy');
+    response.status(201).json({ activity: serializeActivity(activity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/me/created-activities', requireAuth, async (request, response, next) => {
+  try {
+    const activities = await Activity.find({ createdBy: request.user._id })
+      .populate('createdBy')
+      .sort({ createdAt: -1 })
+      .lean();
+    response.json({ activities: activities.map(serializeActivity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete('/comments/:id', requireAuth, async (request, response, next) => {
   try {
     const comment = await Comment.findOne({
@@ -925,6 +1331,201 @@ router.delete('/comments/:id', requireAuth, async (request, response, next) => {
     }
 
     response.json({ ok: true, post: serializePost(post) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/activities/:id', requireAuth, async (request, response, next) => {
+  try {
+    const activity = await Activity.findOne({
+      _id: request.params.id,
+      createdBy: request.user._id,
+    }).populate('createdBy');
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在或无权编辑' });
+      return;
+    }
+
+    for (const field of ['title', 'category', 'posterUrl', 'date', 'time', 'location', 'host', 'price', 'description', 'checkInCode', 'registrationDeadline']) {
+      if (Object.prototype.hasOwnProperty.call(request.body, field)) {
+        activity[field] = String(request.body[field] || '').trim();
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(request.body, 'capacity')) {
+      activity.capacity = Math.max(1, Number(request.body.capacity || 0) || activity.capacity);
+    }
+    if (typeof request.body.allowComments === 'boolean') {
+      activity.allowComments = request.body.allowComments;
+    }
+    if (typeof request.body.publicDisplay === 'boolean') {
+      activity.publicDisplay = request.body.publicDisplay;
+    }
+    if (Array.isArray(request.body.tags)) {
+      activity.tags = request.body.tags.filter((item) => typeof item === 'string' && item.trim());
+    }
+
+    await activity.save();
+    const recipients = await Enrollment.find({
+      activity: activity._id,
+      status: 'registered',
+      user: { $ne: request.user._id },
+    }).select('user');
+    await createActivityNotifications({
+      recipientIds: recipients.map((item) => item.user),
+      activity,
+      title: '活动变更',
+      firstLine: `你报名的「${activity.title}」信息已更新`,
+      secondLine: `${activity.date} ${activity.time} · ${activity.location}`,
+      action: 'activity_updated',
+      actor: request.user._id,
+    });
+    response.json({ activity: serializeActivity(activity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/activities/:id', requireAuth, async (request, response, next) => {
+  try {
+    const activity = await Activity.findOne({
+      _id: request.params.id,
+      createdBy: request.user._id,
+    });
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在或无权删除' });
+      return;
+    }
+
+    const recipients = await Enrollment.find({
+      activity: activity._id,
+      status: 'registered',
+      user: { $ne: request.user._id },
+    }).select('user');
+
+    await Promise.all([
+      Enrollment.deleteMany({ activity: activity._id }),
+      CheckIn.deleteMany({ activity: activity._id }),
+      Favorite.deleteMany({ activity: activity._id }),
+      Notification.deleteMany({ activity: activity._id }),
+      BrowsingHistory.deleteMany({ kind: 'activity', refId: activity._id }),
+      activity.deleteOne(),
+    ]);
+
+    await createActivityNotifications({
+      recipientIds: recipients.map((item) => item.user),
+      activity: null,
+      title: '活动取消',
+      firstLine: `你报名的「${activity.title}」已取消`,
+      secondLine: '很抱歉给你带来不便，请留意后续活动通知',
+      action: 'activity_cancelled',
+      actor: request.user._id,
+    });
+
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/activities/:id/checkin-code/reset', requireAuth, async (request, response, next) => {
+  try {
+    const activity = await Activity.findOne({
+      _id: request.params.id,
+      createdBy: request.user._id,
+    }).populate('createdBy');
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在或无权重置签到口令' });
+      return;
+    }
+
+    activity.checkInCode = generateCheckInCode();
+    await activity.save();
+
+    const recipients = await Enrollment.find({
+      activity: activity._id,
+      status: 'registered',
+      user: { $ne: request.user._id },
+    }).select('user');
+    await createActivityNotifications({
+      recipientIds: recipients.map((item) => item.user),
+      activity,
+      title: '签到口令已更新',
+      firstLine: `「${activity.title}」签到口令已更新`,
+      secondLine: '请在活动现场使用最新口令完成签到',
+      action: 'activity_checkin_updated',
+      actor: request.user._id,
+    });
+
+    response.json({
+      code: activity.checkInCode,
+      activity: serializeActivity(activity),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/activities/:id/enrollments', requireAuth, async (request, response, next) => {
+  try {
+    const activity = await Activity.findOne({
+      _id: request.params.id,
+      createdBy: request.user._id,
+    });
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在或无权查看报名名单' });
+      return;
+    }
+
+    const enrollments = await Enrollment.find({
+      activity: activity._id,
+      status: 'registered',
+    })
+      .populate('user')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    response.json({
+      enrollments: enrollments
+        .filter((enrollment) => enrollment.user)
+        .map((enrollment) => ({
+          id: String(enrollment._id),
+          status: enrollment.status,
+          createdAt: enrollment.createdAt instanceof Date
+            ? enrollment.createdAt.toISOString()
+            : enrollment.createdAt,
+          user: publicUser(enrollment.user),
+        })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/activities/:id/favorite', requireAuth, async (request, response, next) => {
+  try {
+    const activity = await findActivityOr404(request.params.id, response);
+    if (!activity) return;
+
+    const existing = await Favorite.findOne({
+      activity: activity._id,
+      user: request.user._id,
+    });
+    const favorited = !existing;
+    if (existing) {
+      await existing.deleteOne();
+    } else {
+      await Favorite.create({
+        kind: 'activity',
+        activity: activity._id,
+        user: request.user._id,
+      });
+    }
+
+    response.json({
+      favorited,
+      activity: serializeActivity(activity),
+    });
   } catch (error) {
     next(error);
   }
@@ -954,6 +1555,25 @@ router.post('/activities/:id/join', requireAuth, async (request, response, next)
     if (!wasRegistered) {
       activity.enrolled = Math.min(activity.capacity || Number.MAX_SAFE_INTEGER, activity.enrolled + 1);
       await activity.save();
+      await createActivityNotifications({
+        recipientIds: [request.user._id],
+        activity,
+        title: '报名成功',
+        firstLine: `你已成功报名「${activity.title}」`,
+        secondLine: `${activity.date} ${activity.time} · ${activity.location}`,
+        action: 'activity_registered',
+      });
+      if (activity.createdBy && String(activity.createdBy._id || activity.createdBy) !== String(request.user._id)) {
+        await createActivityNotifications({
+          recipientIds: [activity.createdBy._id || activity.createdBy],
+          activity,
+          title: '新增报名',
+          firstLine: `${request.user.name} 报名了「${activity.title}」`,
+          secondLine: `当前已报名 ${activity.enrolled} 人`,
+          action: 'activity_enrollment_new',
+          actor: request.user._id,
+        });
+      }
     }
 
     response.json({
@@ -984,6 +1604,25 @@ router.delete('/activities/:id/join', requireAuth, async (request, response, nex
       await enrollment.save();
       activity.enrolled = Math.max(0, activity.enrolled - 1);
       await activity.save();
+      await createActivityNotifications({
+        recipientIds: [request.user._id],
+        activity,
+        title: '取消报名成功',
+        firstLine: `你已取消「${activity.title}」报名`,
+        secondLine: `${activity.date} ${activity.time} · ${activity.location}`,
+        action: 'activity_registration_cancelled',
+      });
+      if (activity.createdBy && String(activity.createdBy._id || activity.createdBy) !== String(request.user._id)) {
+        await createActivityNotifications({
+          recipientIds: [activity.createdBy._id || activity.createdBy],
+          activity,
+          title: '报名取消',
+          firstLine: `${request.user.name} 取消了「${activity.title}」报名`,
+          secondLine: `当前已报名 ${activity.enrolled} 人`,
+          action: 'activity_enrollment_cancelled',
+          actor: request.user._id,
+        });
+      }
     }
 
     response.json({
@@ -1264,6 +1903,7 @@ router.get('/me/notifications', requireAuth, async (request, response, next) => 
       .populate('actor')
       .populate('post')
       .populate('activity')
+      .populate('group')
       .sort({ createdAt: -1 })
       .lean();
 
@@ -1281,6 +1921,45 @@ router.post('/me/notifications/read-all', requireAuth, async (request, response,
       { recipient: request.user._id, unread: true },
       { $set: { unread: false } }
     );
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/me/notifications/:id/read', requireAuth, async (request, response, next) => {
+  try {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: request.params.id, recipient: request.user._id },
+      { $set: { unread: false } },
+      { new: true }
+    )
+      .populate('actor')
+      .populate('post')
+      .populate('activity')
+      .populate('group');
+
+    if (!notification) {
+      response.status(404).json({ message: '通知不存在' });
+      return;
+    }
+
+    response.json({ notification: serializeNotification(notification) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/me/notifications/:id', requireAuth, async (request, response, next) => {
+  try {
+    const result = await Notification.deleteOne({
+      _id: request.params.id,
+      recipient: request.user._id,
+    });
+    if (result.deletedCount === 0) {
+      response.status(404).json({ message: '通知不存在' });
+      return;
+    }
     response.json({ ok: true });
   } catch (error) {
     next(error);
@@ -1310,6 +1989,35 @@ router.get('/me/conversations', requireAuth, async (request, response, next) => 
       conversations: conversations.map((conversation, index) =>
         serializeConversation(conversation, request.user._id, unreadCounts[index])
       ),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/conversations/start', requireAuth, async (request, response, next) => {
+  try {
+    const target = await findUserOr404(request.body.userId, response);
+    if (!target) return;
+    if (String(target._id) === String(request.user._id)) {
+      response.status(400).json({ message: '不能给自己发私信' });
+      return;
+    }
+
+    let conversation = await Conversation.findOne({
+      participants: { $all: [request.user._id, target._id] },
+    });
+
+    if (!conversation) {
+      conversation = await Conversation.create({
+        participants: [request.user._id, target._id],
+        lastMessage: '',
+      });
+    }
+
+    await conversation.populate('participants');
+    response.status(201).json({
+      conversation: serializeConversation(conversation, request.user._id, 0),
     });
   } catch (error) {
     next(error);
@@ -1386,10 +2094,14 @@ router.post('/conversations/:id/messages', requireAuth, async (request, response
 
 router.get('/me/groups', requireAuth, async (request, response, next) => {
   try {
-    const memberships = await GroupMembership.find({ user: request.user._id })
+    const memberships = await GroupMembership.find({
+      user: request.user._id,
+      status: 'active',
+    })
       .populate({
         path: 'group',
         populate: [
+          'announcementUpdatedBy',
           'activityIds',
           { path: 'discussionIds', populate: 'author' },
         ],
@@ -1401,12 +2113,363 @@ router.get('/me/groups', requireAuth, async (request, response, next) => {
       groups: memberships
         .filter((membership) => membership.group)
         .map((membership) => ({
-          ...serializeGroup(membership.group),
-          joined: true,
-          membershipRole: membership.role,
-          membershipId: String(membership._id),
+          ...serializeGroup(membership.group, {
+            joined: true,
+            membershipRole: membership.role,
+            membershipId: String(membership._id),
+            canManage: ['owner', 'admin'].includes(membership.role),
+          }),
         })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/me/managed-groups', requireAuth, async (request, response, next) => {
+  try {
+    const memberships = await GroupMembership.find({
+      user: request.user._id,
+      role: { $in: ['owner', 'admin'] },
+      status: 'active',
+    })
+      .populate({
+        path: 'group',
+        populate: [
+          'announcementUpdatedBy',
+          'activityIds',
+          { path: 'discussionIds', populate: 'author' },
+        ],
+      })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    response.json({
+      groups: memberships
+        .filter((membership) => membership.group)
+        .map((membership) => ({
+          ...serializeGroup(membership.group, {
+            joined: true,
+            membershipRole: membership.role,
+            membershipId: String(membership._id),
+            canManage: true,
+          }),
+        })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/groups', requireAuth, async (request, response, next) => {
+  try {
+    const name = String(request.body.name || '').trim();
+    if (!name) {
+      response.status(400).json({ message: '社群名称不能为空' });
+      return;
+    }
+
+    const group = await Group.create({
+      name,
+      description: String(request.body.description || '').trim(),
+      coverUrl: String(request.body.coverUrl || '').trim()
+        || 'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80',
+      iconUrl: String(request.body.iconUrl || '').trim()
+        || 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=500&q=80',
+      tags: Array.isArray(request.body.tags)
+        ? request.body.tags.filter((item) => typeof item === 'string' && item.trim())
+        : [],
+      visibility: ['public', 'approval', 'private'].includes(request.body.visibility)
+        ? request.body.visibility
+        : 'approval',
+      members: 1,
+      admins: 1,
+    });
+
+    await GroupMembership.create({
+      group: group._id,
+      user: request.user._id,
+      role: 'owner',
+    });
+
+    const populatedGroup = await findGroupOr404(group._id, response);
+    if (!populatedGroup) return;
+
+    response.status(201).json({
+      group: serializeGroup(populatedGroup, {
+        joined: true,
+        membershipRole: 'owner',
+        canManage: true,
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/groups/:id', requireAuth, requireGroupManager, async (request, response, next) => {
+  try {
+    const group = request.group;
+    for (const field of ['name', 'description', 'coverUrl', 'iconUrl']) {
+      if (Object.prototype.hasOwnProperty.call(request.body, field)) {
+        group[field] = String(request.body[field] || '').trim();
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(request.body, 'visibility')) {
+      const visibility = String(request.body.visibility || '').trim();
+      if (['public', 'approval', 'private'].includes(visibility)) {
+        group.visibility = visibility;
+      }
+    }
+    if (Array.isArray(request.body.tags)) {
+      group.tags = request.body.tags.filter(
+        (item) => typeof item === 'string' && item.trim()
+      );
+    }
+
+    await group.save();
+    response.json({
+      group: serializeGroup(group, {
+        joined: true,
+        membershipRole: request.groupMembership.role,
+        membershipId: String(request.groupMembership._id),
+        canManage: true,
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch(
+  '/groups/:id/announcement',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      request.group.announcementText = String(request.body.text || '').trim();
+      request.group.announcementUpdatedAt = new Date();
+      request.group.announcementUpdatedBy = request.user._id;
+      await request.group.save();
+      await request.group.populate('announcementUpdatedBy');
+      const members = await GroupMembership.find({
+        group: request.group._id,
+        status: 'active',
+        user: { $ne: request.user._id },
+      }).select('user');
+      await createGroupNotifications({
+        recipientIds: members.map((membership) => membership.user),
+        group: request.group,
+        title: '社群公告更新',
+        firstLine: `「${request.group.name}」发布了新公告`,
+        secondLine: request.group.announcementText,
+        action: 'group_announcement_updated',
+        actor: request.user._id,
+      });
+
+      response.json({
+        group: serializeGroup(request.group, {
+          joined: true,
+          membershipRole: request.groupMembership.role,
+          membershipId: String(request.groupMembership._id),
+          canManage: true,
+        }),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post('/groups/:id/posts', requireAuth, requireGroupMember, async (request, response, next) => {
+  try {
+    const title = String(request.body.title || '').trim();
+    const body = String(request.body.body || '').trim();
+    const topic = String(request.body.topic || `${request.group.name}讨论`).trim();
+    const location = String(request.body.location || '').trim();
+    const images = Array.isArray(request.body.images)
+      ? request.body.images.filter((item) => typeof item === 'string' && item.trim())
+      : [];
+
+    if (!title || !body) {
+      response.status(400).json({ message: '标题和内容不能为空' });
+      return;
+    }
+
+    const post = await Post.create({
+      author: request.user._id,
+      group: request.group._id,
+      title,
+      body,
+      topic,
+      location,
+      images,
+    });
+
+    await Group.updateOne(
+      { _id: request.group._id },
+      { $push: { discussionIds: { $each: [post._id], $position: 0 } } }
+    );
+
+    const populated = await Post.findById(post._id).populate('author').populate('group');
+    response.status(201).json({ post: serializePost(populated) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch(
+  '/groups/:id/discussions/:postId/pin',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      const post = await Post.findOne({
+        _id: request.params.postId,
+        group: request.group._id,
+      });
+      if (!post) {
+        response.status(404).json({ message: '群内讨论不存在' });
+        return;
+      }
+
+      const pinned = typeof request.body.pinned === 'boolean'
+        ? request.body.pinned
+        : !request.group.pinnedDiscussionIds.some(
+            (item) => String(item) === String(post._id)
+          );
+
+      if (pinned) {
+        await Group.updateOne(
+          { _id: request.group._id },
+          { $addToSet: { pinnedDiscussionIds: post._id } }
+        );
+      } else {
+        await Group.updateOne(
+          { _id: request.group._id },
+          { $pull: { pinnedDiscussionIds: post._id } }
+        );
+      }
+
+      post.pinnedInGroup = pinned;
+      await post.save();
+      const members = await GroupMembership.find({
+        group: request.group._id,
+        status: 'active',
+        user: { $ne: request.user._id },
+      }).select('user');
+      await createGroupNotifications({
+        recipientIds: members.map((membership) => membership.user),
+        group: request.group,
+        title: pinned ? '讨论已置顶' : '讨论已取消置顶',
+        firstLine: `「${request.group.name}」${pinned ? '置顶了' : '取消置顶'}讨论`,
+        secondLine: post.title,
+        action: pinned ? 'group_discussion_pinned' : 'group_discussion_unpinned',
+        actor: request.user._id,
+      });
+
+      const refreshed = await findGroupOr404(request.group._id, response);
+      if (!refreshed) return;
+      response.json({
+        group: serializeGroup(refreshed, {
+          joined: true,
+          membershipRole: request.groupMembership.role,
+          membershipId: String(request.groupMembership._id),
+          canManage: true,
+        }),
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post('/groups/:id/activities', requireAuth, requireGroupManager, async (request, response, next) => {
+  try {
+    const title = String(request.body.title || '').trim();
+    const category = String(request.body.category || '社群活动').trim();
+    const date = String(request.body.date || '').trim();
+    const time = String(request.body.time || '').trim();
+    const location = String(request.body.location || '').trim();
+    const host = String(request.body.host || request.group.name).trim();
+    const description = String(request.body.description || '').trim();
+
+    if (!title || !date || !time || !location || !description) {
+      response.status(400).json({ message: '活动标题、时间、地点和简介不能为空' });
+      return;
+    }
+
+    const activity = await Activity.create({
+      createdBy: request.user._id,
+      group: request.group._id,
+      title,
+      category,
+      posterUrl: String(request.body.posterUrl || '').trim()
+        || 'asset:assets/images/activity_stage_blue.png',
+      date,
+      time,
+      location,
+      host,
+      capacity: Math.max(1, Number(request.body.capacity || 0) || 100),
+      price: String(request.body.price || '免费').trim() || '免费',
+      description,
+      tags: Array.isArray(request.body.tags)
+        ? request.body.tags.filter((item) => typeof item === 'string' && item.trim())
+        : [],
+      allowComments: request.body.allowComments !== false,
+      publicDisplay: request.body.publicDisplay !== false,
+      checkInCode: String(request.body.checkInCode || '').trim() || generateCheckInCode(),
+    });
+
+    await Group.updateOne(
+      { _id: request.group._id },
+      { $push: { activityIds: { $each: [activity._id], $position: 0 } } }
+    );
+    const members = await GroupMembership.find({
+      group: request.group._id,
+      status: 'active',
+      user: { $ne: request.user._id },
+    }).select('user');
+    await createGroupNotifications({
+      recipientIds: members.map((membership) => membership.user),
+      group: request.group,
+      title: '社群活动发布',
+      firstLine: `「${request.group.name}」发布了新活动`,
+      secondLine: `${activity.title} · ${activity.date} ${activity.time}`,
+      action: 'group_activity_created',
+      actor: request.user._id,
+    });
+
+    await activity.populate('createdBy');
+    response.status(201).json({ activity: serializeActivity(activity) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/groups/:id', requireAuth, requireGroupManager, async (request, response, next) => {
+  try {
+    if (request.groupMembership.role !== 'owner') {
+      response.status(403).json({ message: '只有群主可以解散社群' });
+      return;
+    }
+
+    await Promise.all([
+      GroupMembership.deleteMany({ group: request.group._id }),
+      Post.updateMany(
+        { group: request.group._id },
+        { $unset: { group: '', pinnedInGroup: '' } }
+      ),
+      Activity.updateMany(
+        { group: request.group._id },
+        { $unset: { group: '' } }
+      ),
+      Notification.deleteMany({ group: request.group._id }),
+      BrowsingHistory.deleteMany({ kind: 'group', refId: request.group._id }),
+      request.group.deleteOne(),
+    ]);
+
+    response.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -1417,19 +2480,78 @@ router.post('/groups/:id/join', requireAuth, async (request, response, next) => 
     const group = await findGroupOr404(request.params.id, response);
     if (!group) return;
 
-    const existing = await GroupMembership.findOne({
+    let membership = await GroupMembership.findOne({
       group: group._id,
       user: request.user._id,
     });
-    if (!existing) {
-      await GroupMembership.create({ group: group._id, user: request.user._id });
-      group.members += 1;
-      await group.save();
-      await group.populate('activityIds');
-      await group.populate({ path: 'discussionIds', populate: 'author' });
+    if (!membership) {
+      const requiresApproval = group.visibility !== 'public';
+      membership = await GroupMembership.create({
+        group: group._id,
+        user: request.user._id,
+        status: requiresApproval ? 'pending' : 'active',
+      });
+      if (requiresApproval) {
+        const managerIds = await findGroupManagerUserIds(group._id);
+        await createGroupNotifications({
+          recipientIds: managerIds,
+          group,
+          title: '新的入群申请',
+          firstLine: `${request.user.name} 申请加入「${group.name}」`,
+          secondLine: '请到社群管理台审核',
+          action: 'group_join_requested',
+          actor: request.user._id,
+        });
+      } else {
+        group.members += 1;
+        await group.save();
+        await group.populate('announcementUpdatedBy');
+        await group.populate('activityIds');
+        await group.populate({ path: 'discussionIds', populate: 'author' });
+        await createGroupNotifications({
+          recipientIds: [request.user._id],
+          group,
+          title: '已加入社群',
+          firstLine: `你已加入「${group.name}」`,
+          secondLine: group.description,
+          action: 'group_join_approved',
+          actor: request.user._id,
+        });
+      }
+    } else if (membership.status === 'rejected') {
+      membership.status = group.visibility === 'public' ? 'active' : 'pending';
+      membership.reviewedBy = undefined;
+      membership.reviewedAt = undefined;
+      await membership.save();
+      if (membership.status === 'pending') {
+        const managerIds = await findGroupManagerUserIds(group._id);
+        await createGroupNotifications({
+          recipientIds: managerIds,
+          group,
+          title: '新的入群申请',
+          firstLine: `${request.user.name} 重新申请加入「${group.name}」`,
+          secondLine: '请到社群管理台审核',
+          action: 'group_join_requested',
+          actor: request.user._id,
+        });
+      } else {
+        group.members += 1;
+        await group.save();
+      }
     }
+    const isActive = membership.status === 'active';
 
-    response.json({ joined: true, group: { ...serializeGroup(group), joined: true } });
+    response.json({
+      joined: isActive,
+      pending: membership.status === 'pending',
+      group: serializeGroup(group, {
+        joined: isActive,
+        membershipRole: membership.role,
+        membershipId: String(membership._id),
+        membershipStatus: membership.status,
+        canManage: isActive && ['owner', 'admin'].includes(membership.role),
+      }),
+    });
   } catch (error) {
     next(error);
   }
@@ -1445,14 +2567,30 @@ router.delete('/groups/:id/join', requireAuth, async (request, response, next) =
       user: request.user._id,
     });
     if (existing) {
+      if (existing.role === 'owner') {
+        response.status(400).json({ message: '群主不能直接退出社群，请先转交或解散社群' });
+        return;
+      }
       await existing.deleteOne();
-      group.members = Math.max(0, group.members - 1);
-      await group.save();
-      await group.populate('activityIds');
-      await group.populate({ path: 'discussionIds', populate: 'author' });
+      if (existing.status === 'active') {
+        group.members = Math.max(0, group.members - 1);
+        if (existing.role === 'admin') {
+          group.admins = Math.max(1, group.admins - 1);
+        }
+        await group.save();
+        await group.populate('announcementUpdatedBy');
+        await group.populate('activityIds');
+        await group.populate({ path: 'discussionIds', populate: 'author' });
+      }
     }
 
-    response.json({ joined: false, group: { ...serializeGroup(group), joined: false } });
+    response.json({
+      joined: false,
+      group: serializeGroup(group, {
+        joined: false,
+        canManage: false,
+      }),
+    });
   } catch (error) {
     next(error);
   }
@@ -1462,11 +2600,227 @@ router.get('/groups/:id', async (request, response, next) => {
   try {
     const group = await findGroupOr404(request.params.id, response);
     if (!group) return;
-    response.json({ group: serializeGroup(group) });
+    const currentUser = await resolveOptionalUser(request);
+    const membership = currentUser
+      ? await findGroupMembership(group._id, currentUser._id)
+      : null;
+    const isActive = membership?.status === 'active';
+    response.json({
+      group: serializeGroup(group, {
+        joined: isActive,
+        membershipRole: membership?.role || '',
+        membershipId: membership ? String(membership._id) : '',
+        membershipStatus: membership?.status || '',
+        canManage: isActive && ['owner', 'admin'].includes(membership?.role),
+      }),
+    });
   } catch (error) {
     next(error);
   }
 });
+
+router.get('/groups/:id/members', requireAuth, requireGroupManager, async (request, response, next) => {
+  try {
+    const memberships = await GroupMembership.find({
+      group: request.group._id,
+      status: 'active',
+    })
+      .populate('user')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    response.json({
+      members: memberships
+        .filter((membership) => membership.user)
+        .map(serializeGroupMember),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/groups/:id/join-requests', requireAuth, requireGroupManager, async (request, response, next) => {
+  try {
+    const memberships = await GroupMembership.find({
+      group: request.group._id,
+      status: 'pending',
+    })
+      .populate('user')
+      .sort({ createdAt: 1 })
+      .lean();
+
+    response.json({
+      requests: memberships
+        .filter((membership) => membership.user)
+        .map(serializeGroupMember),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post(
+  '/groups/:id/join-requests/:membershipId/approve',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      const membership = await GroupMembership.findOne({
+        _id: request.params.membershipId,
+        group: request.group._id,
+        status: 'pending',
+      }).populate('user');
+      if (!membership) {
+        response.status(404).json({ message: '入群申请不存在' });
+        return;
+      }
+
+      membership.status = 'active';
+      membership.role = 'member';
+      membership.reviewedBy = request.user._id;
+      membership.reviewedAt = new Date();
+      request.group.members += 1;
+      await Promise.all([membership.save(), request.group.save()]);
+      await createGroupNotifications({
+        recipientIds: [membership.user._id],
+        group: request.group,
+        title: '入群申请已通过',
+        firstLine: `你已加入「${request.group.name}」`,
+        secondLine: '现在可以参与社群讨论和活动了',
+        action: 'group_join_approved',
+        actor: request.user._id,
+      });
+
+      response.json({ member: serializeGroupMember(membership) });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  '/groups/:id/join-requests/:membershipId/reject',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      const membership = await GroupMembership.findOne({
+        _id: request.params.membershipId,
+        group: request.group._id,
+        status: 'pending',
+      }).populate('user');
+      if (!membership) {
+        response.status(404).json({ message: '入群申请不存在' });
+        return;
+      }
+
+      membership.status = 'rejected';
+      membership.reviewedBy = request.user._id;
+      membership.reviewedAt = new Date();
+      await membership.save();
+      await createGroupNotifications({
+        recipientIds: [membership.user._id],
+        group: request.group,
+        title: '入群申请未通过',
+        firstLine: `你加入「${request.group.name}」的申请未通过`,
+        secondLine: '可以稍后完善资料后再次申请',
+        action: 'group_join_rejected',
+        actor: request.user._id,
+      });
+
+      response.json({ member: serializeGroupMember(membership) });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.patch(
+  '/groups/:id/members/:membershipId',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      if (request.groupMembership.role !== 'owner') {
+        response.status(403).json({ message: '只有群主可以调整管理员权限' });
+        return;
+      }
+
+      const membership = await GroupMembership.findOne({
+        _id: request.params.membershipId,
+        group: request.group._id,
+      }).populate('user');
+      if (!membership) {
+        response.status(404).json({ message: '成员记录不存在' });
+        return;
+      }
+      if (membership.role === 'owner') {
+        response.status(400).json({ message: '不能修改群主权限' });
+        return;
+      }
+
+      const nextRole = String(request.body.role || '').trim();
+      if (!['member', 'admin'].includes(nextRole)) {
+        response.status(400).json({ message: '角色参数不合法' });
+        return;
+      }
+      if (membership.role !== nextRole) {
+        if (membership.role === 'member' && nextRole === 'admin') {
+          request.group.admins += 1;
+        }
+        if (membership.role === 'admin' && nextRole === 'member') {
+          request.group.admins = Math.max(1, request.group.admins - 1);
+        }
+        membership.role = nextRole;
+        await Promise.all([membership.save(), request.group.save()]);
+      }
+
+      response.json({ member: serializeGroupMember(membership) });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.delete(
+  '/groups/:id/members/:membershipId',
+  requireAuth,
+  requireGroupManager,
+  async (request, response, next) => {
+    try {
+      const membership = await GroupMembership.findOne({
+        _id: request.params.membershipId,
+        group: request.group._id,
+      });
+      if (!membership) {
+        response.status(404).json({ message: '成员记录不存在' });
+        return;
+      }
+      if (membership.role === 'owner') {
+        response.status(400).json({ message: '不能移除群主' });
+        return;
+      }
+      if (
+        request.groupMembership.role !== 'owner'
+        && membership.role === 'admin'
+      ) {
+        response.status(403).json({ message: '只有群主可以移除管理员' });
+        return;
+      }
+
+      await membership.deleteOne();
+      request.group.members = Math.max(0, request.group.members - 1);
+      if (membership.role === 'admin') {
+        request.group.admins = Math.max(1, request.group.admins - 1);
+      }
+      await request.group.save();
+
+      response.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.get('/topics/:id', async (request, response, next) => {
   try {
@@ -1494,7 +2848,11 @@ router.get('/activities', async (_request, response, next) => {
 router.get('/groups', async (_request, response, next) => {
   try {
     response.json(await fromMongoOrSeed(Group, seed.groups, {
-      populate: ['activityIds', { path: 'discussionIds', populate: 'author' }],
+      populate: [
+        'announcementUpdatedBy',
+        'activityIds',
+        { path: 'discussionIds', populate: 'author' },
+      ],
     }));
   } catch (error) {
     next(error);
@@ -1522,14 +2880,24 @@ router.get('/feed', async (_request, response, next) => {
   }
 });
 
+router.get('/discover', async (request, response, next) => {
+  try {
+    const limit = parsePositiveInt(request.query.limit, 6, 12);
+    const feed = await getFeedData();
+    response.json(buildDiscoverPayload(feed, limit));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/search', async (request, response, next) => {
   try {
-    const query = String(request.query.q || '').trim().toLowerCase();
-    const tokens = query.split(/\s+/).filter(Boolean);
-    const includesQuery = (value) => {
-      const normalized = String(value).toLowerCase();
-      return tokens.some((token) => normalized.includes(token));
-    };
+    const query = String(request.query.q || '').trim();
+    const tokens = readSearchTokens(query);
+    const type = String(request.query.type || 'all').toLowerCase();
+    const category = String(request.query.category || '').trim().toLowerCase();
+    const sort = String(request.query.sort || 'relevance').toLowerCase();
+    const limit = parsePositiveInt(request.query.limit, 12, 50);
 
     if (!query) {
       response.json({
@@ -1543,23 +2911,62 @@ router.get('/search', async (request, response, next) => {
     }
 
     const feed = await getFeedData();
+    const hasCategory = (value) =>
+      !category || String(value || '').toLowerCase() === category;
 
-    response.json({
+    const result = {
       users: feed.users.filter((user) =>
-        [user.name, user.school, user.major, user.bio].some(includesQuery)
+        matchesTokens([user.name, user.school, user.major, user.grade, user.bio], tokens)
       ),
       posts: feed.posts.filter((post) =>
-        [post.title, post.body, post.topic, post.location].some(includesQuery)
+        matchesTokens([post.title, post.body, post.topic, post.location, post.author?.name], tokens)
       ),
       activities: feed.activities.filter((activity) =>
-        [activity.title, activity.category, activity.location, activity.host].some(includesQuery)
+        hasCategory(activity.category) &&
+        matchesTokens([
+          activity.title,
+          activity.category,
+          activity.location,
+          activity.host,
+          activity.description,
+          ...(activity.tags || activity.highlights || []),
+        ], tokens)
       ),
       groups: feed.groups.filter((group) =>
-        [group.name, group.description, ...(group.tags || [])].some(includesQuery)
+        matchesTokens([group.name, group.description, ...(group.tags || [])], tokens)
       ),
       topics: feed.topics.filter((topic) =>
-        [topic.name, topic.description, ...(topic.relatedTopics || [])].some(includesQuery)
+        matchesTokens([topic.name, topic.description, ...(topic.relatedTopics || [])], tokens)
       ),
+    };
+
+    const filtered = {
+      users: type === 'all' || type === 'users'
+        ? sortSearchItems(result.users, 'users', sort).slice(0, limit)
+        : [],
+      posts: type === 'all' || type === 'posts'
+        ? sortSearchItems(result.posts, 'posts', sort).slice(0, limit)
+        : [],
+      activities: type === 'all' || type === 'activities'
+        ? sortSearchItems(result.activities, 'activities', sort).slice(0, limit)
+        : [],
+      groups: type === 'all' || type === 'groups'
+        ? sortSearchItems(result.groups, 'groups', sort).slice(0, limit)
+        : [],
+      topics: type === 'all' || type === 'topics'
+        ? sortSearchItems(result.topics, 'topics', sort).slice(0, limit)
+        : [],
+    };
+
+    response.json({
+      ...filtered,
+      meta: {
+        query,
+        type,
+        category,
+        sort,
+        total: Object.values(result).reduce((sum, items) => sum + items.length, 0),
+      },
     });
   } catch (error) {
     next(error);

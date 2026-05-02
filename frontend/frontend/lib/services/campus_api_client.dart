@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../models/campus_feed.dart';
 import '../models/campus_models.dart';
@@ -13,13 +14,103 @@ class CampusApiClient {
   final String baseUrl;
   final Duration timeout;
 
+  static String _imageContentType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
   Future<CampusFeed> fetchFeed() async {
     final json = await _getJson('/api/feed');
     return CampusFeed.fromJson(json);
   }
 
-  Future<CampusSearchResult> search(String query) async {
-    final json = await _getJson('/api/search', queryParameters: {'q': query});
+  Future<String> uploadImage({
+    required String token,
+    required String filePath,
+    String purpose = 'general',
+  }) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw const CampusApiException('图片文件不存在');
+    }
+
+    final uri = Uri.parse(baseUrl).replace(path: '/api/uploads/image');
+    final boundary =
+        '----campus-social-${DateTime.now().microsecondsSinceEpoch}';
+    final fileName = file.uri.pathSegments.isEmpty
+        ? 'image.jpg'
+        : file.uri.pathSegments.last;
+    final contentType = _imageContentType(fileName);
+    final bytes = await file.readAsBytes();
+    final body = BytesBuilder();
+
+    void addText(String text) {
+      body.add(utf8.encode(text));
+    }
+
+    addText('--$boundary\r\n');
+    addText('Content-Disposition: form-data; name="purpose"\r\n\r\n');
+    addText('$purpose\r\n');
+    addText('--$boundary\r\n');
+    addText(
+      'Content-Disposition: form-data; name="image"; filename="$fileName"\r\n',
+    );
+    addText('Content-Type: $contentType\r\n\r\n');
+    body.add(bytes);
+    addText('\r\n--$boundary--\r\n');
+
+    final client = HttpClient()..connectionTimeout = timeout;
+    try {
+      final request = await client.postUrl(uri).timeout(timeout);
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.headers.contentType = ContentType(
+        'multipart',
+        'form-data',
+        parameters: {'boundary': boundary},
+      );
+      request.contentLength = body.length;
+      request.add(body.takeBytes());
+      final response = await request.close().timeout(timeout);
+      final responseBody = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(timeout);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw CampusApiException(
+          'Request failed with ${response.statusCode}: $responseBody',
+        );
+      }
+
+      final decoded = jsonDecode(responseBody);
+      if (decoded is Map && decoded['url'] != null) {
+        return decoded['url'].toString();
+      }
+      throw const CampusApiException('Response is missing uploaded image URL.');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<CampusDiscover> fetchDiscover() async {
+    final json = await _getJson('/api/discover');
+    return CampusDiscover.fromJson(json);
+  }
+
+  Future<CampusSearchResult> search(
+    String query, {
+    String type = 'all',
+    String? category,
+    String sort = 'relevance',
+  }) async {
+    final parameters = <String, String>{'q': query, 'type': type, 'sort': sort};
+    if (category?.isNotEmpty == true) {
+      parameters['category'] = category!;
+    }
+    final json = await _getJson('/api/search', queryParameters: parameters);
     return CampusSearchResult.fromJson(json);
   }
 
@@ -133,12 +224,118 @@ class CampusApiClient {
     return _readActivityPayload(json);
   }
 
+  Future<CampusActivity> createActivity({
+    required String token,
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final json = await _postJson('/api/activities', {
+      'title': title,
+      'category': category,
+      'date': date,
+      'time': time,
+      'location': location,
+      'host': host,
+      'capacity': capacity,
+      'price': price,
+      'description': description,
+      'tags': tags,
+      'allowComments': allowComments,
+      'publicDisplay': publicDisplay,
+      'posterUrl': posterUrl.isEmpty
+          ? 'asset:assets/images/activity_stage_blue.png'
+          : posterUrl,
+      'checkInCode': 'CAMPUS2026',
+    }, token: token);
+    return _readActivityPayload(json);
+  }
+
+  Future<CampusActivity> updateActivity({
+    required String token,
+    required String activityId,
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final json = await _patchJson('/api/activities/$activityId', {
+      'title': title,
+      'category': category,
+      'date': date,
+      'time': time,
+      'location': location,
+      'host': host,
+      'capacity': capacity,
+      'price': price,
+      'description': description,
+      'posterUrl': posterUrl,
+      'tags': tags,
+      'allowComments': allowComments,
+      'publicDisplay': publicDisplay,
+    }, token: token);
+    return _readActivityPayload(json);
+  }
+
+  Future<void> deleteActivity({
+    required String token,
+    required String activityId,
+  }) async {
+    await _deleteJson('/api/activities/$activityId', token: token);
+  }
+
+  Future<({String code, CampusActivity activity})> resetActivityCheckInCode({
+    required String token,
+    required String activityId,
+  }) async {
+    final json = await _postJson(
+      '/api/activities/$activityId/checkin-code/reset',
+      {},
+      token: token,
+    );
+    return (
+      code: (json['code'] ?? '').toString(),
+      activity: _readActivityPayload(json),
+    );
+  }
+
   Future<CampusActivity> cancelActivityJoin({
     required String token,
     required String activityId,
   }) async {
     final json = await _deleteJson(
       '/api/activities/$activityId/join',
+      token: token,
+    );
+    return _readActivityPayload(json);
+  }
+
+  Future<CampusActivity> toggleActivityFavorite({
+    required String token,
+    required String activityId,
+  }) async {
+    final json = await _postJson(
+      '/api/activities/$activityId/favorite',
+      {},
       token: token,
     );
     return _readActivityPayload(json);
@@ -153,6 +350,37 @@ class CampusApiClient {
     return value
         .whereType<Map>()
         .map((item) => CampusActivity.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  Future<List<CampusActivity>> fetchCreatedActivities({
+    required String token,
+  }) async {
+    final json = await _getJson('/api/me/created-activities', token: token);
+    final value = json['activities'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => CampusActivity.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  Future<List<CampusActivityEnrollment>> fetchActivityEnrollments({
+    required String token,
+    required String activityId,
+  }) async {
+    final json = await _getJson(
+      '/api/activities/$activityId/enrollments',
+      token: token,
+    );
+    final value = json['enrollments'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map(
+          (item) =>
+              CampusActivityEnrollment.fromJson(item.cast<String, dynamic>()),
+        )
         .toList(growable: false);
   }
 
@@ -371,6 +599,25 @@ class CampusApiClient {
     await _postJson('/api/me/notifications/read-all', {}, token: token);
   }
 
+  Future<CampusNotificationRecord> markNotificationRead({
+    required String token,
+    required String notificationId,
+  }) async {
+    final json = await _postJson(
+      '/api/me/notifications/$notificationId/read',
+      {},
+      token: token,
+    );
+    return _readNotificationPayload(json);
+  }
+
+  Future<void> deleteNotification({
+    required String token,
+    required String notificationId,
+  }) async {
+    await _deleteJson('/api/me/notifications/$notificationId', token: token);
+  }
+
   Future<List<CampusConversation>> fetchConversations({
     required String token,
   }) async {
@@ -383,6 +630,16 @@ class CampusApiClient {
           (item) => CampusConversation.fromJson(item.cast<String, dynamic>()),
         )
         .toList(growable: false);
+  }
+
+  Future<CampusConversation> startConversation({
+    required String token,
+    required String userId,
+  }) async {
+    final json = await _postJson('/api/conversations/start', {
+      'userId': userId,
+    }, token: token);
+    return _readConversationPayload(json);
   }
 
   Future<List<CampusChatMessage>> fetchConversationMessages({
@@ -440,9 +697,227 @@ class CampusApiClient {
         .toList(growable: false);
   }
 
-  Future<CampusGroup> fetchGroupDetail(String groupId) async {
-    final json = await _getJson('/api/groups/$groupId');
+  Future<List<CampusGroup>> fetchManagedGroups({required String token}) async {
+    final json = await _getJson('/api/me/managed-groups', token: token);
+    final value = json['groups'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => CampusGroup.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  Future<CampusGroup> fetchGroupDetail(String groupId, {String? token}) async {
+    final json = await _getJson('/api/groups/$groupId', token: token);
     return _readGroupPayload(json);
+  }
+
+  Future<CampusGroup> createGroup({
+    required String token,
+    required String name,
+    required String description,
+    required String coverUrl,
+    required String iconUrl,
+    required List<String> tags,
+    required String visibility,
+  }) async {
+    final json = await _postJson('/api/groups', {
+      'name': name,
+      'description': description,
+      'coverUrl': coverUrl,
+      'iconUrl': iconUrl,
+      'tags': tags,
+      'visibility': visibility,
+    }, token: token);
+    return _readGroupPayload(json);
+  }
+
+  Future<CampusGroup> updateGroup({
+    required String token,
+    required String groupId,
+    required String name,
+    required String description,
+    required String coverUrl,
+    required String iconUrl,
+    required List<String> tags,
+    required String visibility,
+  }) async {
+    final json = await _patchJson('/api/groups/$groupId', {
+      'name': name,
+      'description': description,
+      'coverUrl': coverUrl,
+      'iconUrl': iconUrl,
+      'tags': tags,
+      'visibility': visibility,
+    }, token: token);
+    return _readGroupPayload(json);
+  }
+
+  Future<CampusGroup> updateGroupAnnouncement({
+    required String token,
+    required String groupId,
+    required String text,
+  }) async {
+    final json = await _patchJson('/api/groups/$groupId/announcement', {
+      'text': text,
+    }, token: token);
+    return _readGroupPayload(json);
+  }
+
+  Future<CampusPost> createGroupPost({
+    required String token,
+    required String groupId,
+    required String title,
+    required String body,
+    required String topic,
+    required String location,
+    required List<String> images,
+  }) async {
+    final json = await _postJson('/api/groups/$groupId/posts', {
+      'title': title,
+      'body': body,
+      'topic': topic,
+      'location': location,
+      'images': images,
+    }, token: token);
+    return _readPostPayload(json);
+  }
+
+  Future<CampusGroup> toggleGroupDiscussionPin({
+    required String token,
+    required String groupId,
+    required String postId,
+    required bool pinned,
+  }) async {
+    final json = await _patchJson(
+      '/api/groups/$groupId/discussions/$postId/pin',
+      {'pinned': pinned},
+      token: token,
+    );
+    return _readGroupPayload(json);
+  }
+
+  Future<CampusActivity> createGroupActivity({
+    required String token,
+    required String groupId,
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final json = await _postJson('/api/groups/$groupId/activities', {
+      'title': title,
+      'category': category,
+      'date': date,
+      'time': time,
+      'location': location,
+      'host': host,
+      'capacity': capacity,
+      'price': price,
+      'description': description,
+      'tags': tags,
+      'allowComments': allowComments,
+      'publicDisplay': publicDisplay,
+      'posterUrl': posterUrl.isEmpty
+          ? 'asset:assets/images/activity_stage_blue.png'
+          : posterUrl,
+    }, token: token);
+    return _readActivityPayload(json);
+  }
+
+  Future<void> deleteGroup({
+    required String token,
+    required String groupId,
+  }) async {
+    await _deleteJson('/api/groups/$groupId', token: token);
+  }
+
+  Future<List<CampusGroupMember>> fetchGroupMembers({
+    required String token,
+    required String groupId,
+  }) async {
+    final json = await _getJson('/api/groups/$groupId/members', token: token);
+    final value = json['members'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => CampusGroupMember.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  Future<List<CampusGroupMember>> fetchGroupJoinRequests({
+    required String token,
+    required String groupId,
+  }) async {
+    final json = await _getJson(
+      '/api/groups/$groupId/join-requests',
+      token: token,
+    );
+    final value = json['requests'];
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => CampusGroupMember.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  Future<CampusGroupMember> reviewGroupJoinRequest({
+    required String token,
+    required String groupId,
+    required String membershipId,
+    required bool approved,
+  }) async {
+    final action = approved ? 'approve' : 'reject';
+    final json = await _postJson(
+      '/api/groups/$groupId/join-requests/$membershipId/$action',
+      {},
+      token: token,
+    );
+    final value = json['member'];
+    if (value is Map<String, dynamic>) return CampusGroupMember.fromJson(value);
+    if (value is Map) {
+      return CampusGroupMember.fromJson(value.cast<String, dynamic>());
+    }
+    throw const CampusApiException('Response is missing member.');
+  }
+
+  Future<CampusGroupMember> updateGroupMemberRole({
+    required String token,
+    required String groupId,
+    required String membershipId,
+    required String role,
+  }) async {
+    final json = await _patchJson(
+      '/api/groups/$groupId/members/$membershipId',
+      {'role': role},
+      token: token,
+    );
+    final value = json['member'];
+    if (value is Map<String, dynamic>) return CampusGroupMember.fromJson(value);
+    if (value is Map) {
+      return CampusGroupMember.fromJson(value.cast<String, dynamic>());
+    }
+    throw const CampusApiException('Response is missing member.');
+  }
+
+  Future<void> removeGroupMember({
+    required String token,
+    required String groupId,
+    required String membershipId,
+  }) async {
+    await _deleteJson(
+      '/api/groups/$groupId/members/$membershipId',
+      token: token,
+    );
   }
 
   Future<CampusTopic> fetchTopicDetail(String topicId) async {
@@ -765,6 +1240,28 @@ class CampusApiClient {
       return CampusChatMessage.fromJson(value.cast<String, dynamic>());
     }
     throw const CampusApiException('Response is missing chat message.');
+  }
+
+  CampusConversation _readConversationPayload(Map<String, dynamic> json) {
+    final value = json['conversation'];
+    if (value is Map<String, dynamic>) {
+      return CampusConversation.fromJson(value);
+    }
+    if (value is Map) {
+      return CampusConversation.fromJson(value.cast<String, dynamic>());
+    }
+    throw const CampusApiException('Response is missing conversation.');
+  }
+
+  CampusNotificationRecord _readNotificationPayload(Map<String, dynamic> json) {
+    final value = json['notification'];
+    if (value is Map<String, dynamic>) {
+      return CampusNotificationRecord.fromJson(value);
+    }
+    if (value is Map) {
+      return CampusNotificationRecord.fromJson(value.cast<String, dynamic>());
+    }
+    throw const CampusApiException('Response is missing notification.');
   }
 
   CampusDraft _readDraftPayload(Map<String, dynamic> json) {

@@ -39,6 +39,7 @@ async function run() {
   }
 
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 3000 });
+  await Favorite.syncIndexes();
 
   await Promise.all([
     User.deleteMany({}),
@@ -97,8 +98,12 @@ async function run() {
   const activities = await Activity.insertMany(
     seed.activities.map((activity) => {
       const doc = omitRelationFields(activity, ['guests', 'guestIds', 'highlights']);
+      doc.createdBy = userIdBySeedId.get('u_xiaobei');
       doc.tags = activity.highlights?.length ? activity.highlights : activity.tags;
       doc.checkInCode = activity.checkInCode || 'MUSIC2026';
+      doc.allowComments = true;
+      doc.publicDisplay = true;
+      doc.registrationDeadline = '';
       return doc;
     })
   );
@@ -159,16 +164,47 @@ async function run() {
 
   await Favorite.insertMany([
     {
+      kind: 'post',
       post: postByTitle.get('校园日落拍摄地推荐')._id,
       user: xiaobeiId,
     },
     {
+      kind: 'post',
       post: postByTitle.get('新图书馆自习位怎么预约？求攻略！')._id,
       user: xiaobeiId,
     },
     {
+      kind: 'post',
       post: postByTitle.get('各科目复习资料大合集（持续更新）')._id,
       user: xiaobeiId,
+    },
+    {
+      kind: 'activity',
+      activity: activities[0]._id,
+      user: xiaobeiId,
+    },
+    {
+      kind: 'activity',
+      activity: activities[1]._id,
+      user: xiaobeiId,
+    },
+  ]);
+
+  await Enrollment.insertMany([
+    {
+      activity: activities[0]._id,
+      user: kexinId,
+      status: 'registered',
+    },
+    {
+      activity: activities[0]._id,
+      user: zihaoId,
+      status: 'registered',
+    },
+    {
+      activity: activities[1]._id,
+      user: siyuId,
+      status: 'registered',
     },
   ]);
 
@@ -373,8 +409,30 @@ async function run() {
       doc.discussionIds = (group.discussionIds || [])
         .map((id) => postBySeedId.get(id))
         .filter(Boolean);
+      doc.pinnedDiscussionIds = (group.pinnedDiscussionIds || [])
+        .map((id) => postBySeedId.get(id))
+        .filter(Boolean);
+      doc.announcementUpdatedAt = new Date();
+      doc.announcementUpdatedBy = xiaobeiId;
       return doc;
     })
+  );
+  await Activity.updateMany(
+    { _id: { $in: groups[0].activityIds } },
+    { $set: { group: groups[0]._id } }
+  );
+  await Post.updateMany(
+    { _id: { $in: groups[0].discussionIds } },
+    {
+      $set: {
+        group: groups[0]._id,
+        pinnedInGroup: false,
+      },
+    }
+  );
+  await Post.updateMany(
+    { _id: { $in: groups[0].pinnedDiscussionIds || [] } },
+    { $set: { pinnedInGroup: true } }
   );
   await GroupMembership.insertMany([
     { group: groups[0]._id, user: userIdBySeedId.get('u_xiaobei'), role: 'owner' },

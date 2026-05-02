@@ -203,8 +203,10 @@ const groups = [
     members: 278,
     admins: 13,
     tags: ['编程学习', '技术交流', '项目实战', '互帮互助'],
+    announcementText: '周六的外拍活动已更新到群公告啦，报名同学记得查看集合时间。',
     activityIds: ['a_ai_talk', 'a_music_night'],
     discussionIds: ['p_library', 'p_materials', 'p_review_plan'],
+    pinnedDiscussionIds: ['p_review_plan'],
   },
 ];
 

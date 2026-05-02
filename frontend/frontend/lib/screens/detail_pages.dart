@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
 import '../models/campus_feed.dart';
 import '../models/campus_models.dart';
 import '../repositories/auth_session.dart';
 import '../repositories/campus_repository.dart';
+import 'activity_feature_pages.dart';
 import '../theme/app_theme.dart';
 import '../widgets/campus_widgets.dart';
 
@@ -33,7 +35,9 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   final _bodyController = TextEditingController();
   final _topicController = TextEditingController(text: '校园生活');
   final _locationController = TextEditingController(text: '图书馆广场');
+  final List<String> _imageUrls = [];
   var _isSubmitting = false;
+  var _isUploadingImage = false;
 
   @override
   void dispose() {
@@ -42,6 +46,31 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
     _topicController.dispose();
     _locationController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAndUploadImage() async {
+    if (_isUploadingImage || _imageUrls.length >= 9) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 86,
+      maxWidth: 1600,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingImage = true);
+    try {
+      final url = await CampusRepository.instance.uploadImage(
+        picked.path,
+        purpose: 'post',
+      );
+      if (!mounted) return;
+      setState(() => _imageUrls.add(url));
+      _showMessage(context, '图片已上传');
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -61,7 +90,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
             ? '校园生活'
             : _topicController.text.trim(),
         location: _locationController.text.trim(),
-        images: const ['asset:assets/images/profile_sunset.png'],
+        images: _imageUrls,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -90,7 +119,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
             ? '校园生活'
             : _topicController.text.trim(),
         location: _locationController.text.trim(),
-        images: const ['asset:assets/images/profile_sunset.png'],
+        images: _imageUrls,
       );
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -175,36 +204,50 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
             height: 90,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: 5,
+              itemCount: _imageUrls.length + 1,
               separatorBuilder: (_, _) => const SizedBox(width: 10),
               itemBuilder: (context, index) {
-                if (index == 4) {
-                  return Container(
-                    width: 90,
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: AppColors.muted.withValues(alpha: 0.35),
-                        style: BorderStyle.solid,
+                if (index == _imageUrls.length) {
+                  return InkWell(
+                    onTap: _pickAndUploadImage,
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      width: 90,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: AppColors.muted.withValues(alpha: 0.35),
+                          style: BorderStyle.solid,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add, size: 32, color: AppColors.muted),
-                        SizedBox(height: 4),
-                        Text('添加照片/视频', style: TextStyle(fontSize: 12)),
-                      ],
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (_isUploadingImage)
+                            const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else
+                            const Icon(
+                              Icons.add,
+                              size: 32,
+                              color: AppColors.muted,
+                            ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _isUploadingImage ? '上传中' : '添加照片',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 }
                 return Stack(
                   children: [
-                    SmartImage(
-                      url: sunsetPost.images[index % sunsetPost.images.length],
-                      width: 90,
-                      height: 90,
-                    ),
+                    SmartImage(url: _imageUrls[index], width: 90, height: 90),
                     Positioned(
                       right: 5,
                       top: 5,
@@ -215,7 +258,12 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
                           color: Colors.white,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.close, size: 16),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() => _imageUrls.removeAt(index));
+                          },
+                          child: const Icon(Icons.close, size: 16),
+                        ),
                       ),
                     ),
                   ],
@@ -299,11 +347,26 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
+  CampusDiscover _discover = CampusDiscover.fromFeed(
+    CampusRepository.instance.cachedFeed,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDiscover();
+  }
 
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDiscover() async {
+    final discover = await CampusRepository.instance.fetchDiscover();
+    if (!mounted) return;
+    setState(() => _discover = discover);
   }
 
   void _openResults(String query) {
@@ -320,6 +383,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hotSearches = _discover.hotSearches.isEmpty
+        ? ['摄影社团招新', '篮球联赛', '志愿者活动', '考研经验分享', '校园音乐节', 'AI 未来发展']
+        : _discover.hotSearches.take(6).toList(growable: false);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(title: const Text('搜索')),
@@ -408,17 +475,10 @@ class _SearchScreenState extends State<SearchScreen> {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             children: [
-              for (var i = 0; i < recentSearches.length + 1; i++)
+              for (var i = 0; i < hotSearches.length; i++)
                 InkWell(
                   onTap: () {
-                    final keyword = [
-                      '摄影社团招新',
-                      '篮球联赛',
-                      '志愿者活动',
-                      '考研经验分享',
-                      '校园音乐节',
-                      'AI 未来发展',
-                    ][i];
+                    final keyword = hotSearches[i];
                     _controller.text = keyword;
                     _openResults(keyword);
                   },
@@ -452,14 +512,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          [
-                            '摄影社团招新',
-                            '篮球联赛',
-                            '志愿者活动',
-                            '考研经验分享',
-                            '校园音乐节',
-                            'AI 未来发展',
-                          ][i],
+                          hotSearches[i],
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w700),
@@ -490,8 +543,23 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   CampusSearchResult _result = CampusSearchResult.empty();
   bool _isLoading = true;
   int _selectedTab = 0;
+  int _searchRequestId = 0;
+  String _selectedSort = 'relevance';
 
-  static const _tabs = ['综合', '用户', '活动', '帖子', '话题'];
+  static const _tabs = ['综合', '用户', '活动', '帖子', '社群', '话题'];
+  static const _tabTypes = [
+    'all',
+    'users',
+    'activities',
+    'posts',
+    'groups',
+    'topics',
+  ];
+  static const _sortOptions = [
+    ('relevance', '相关'),
+    ('popular', '热门'),
+    ('latest', '最新'),
+  ];
 
   @override
   void initState() {
@@ -508,21 +576,45 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Future<void> _runSearch(String query) async {
     final normalizedQuery = query.trim();
-    if (normalizedQuery.isEmpty) return;
+    if (normalizedQuery.isEmpty) {
+      setState(() {
+        _result = CampusSearchResult.empty();
+        _isLoading = false;
+      });
+      return;
+    }
 
+    final requestId = ++_searchRequestId;
     setState(() => _isLoading = true);
-    final result = await CampusRepository.instance.search(normalizedQuery);
-    if (!mounted) return;
+    final result = await CampusRepository.instance.search(
+      normalizedQuery,
+      type: _tabTypes[_selectedTab],
+      sort: _selectedSort,
+    );
+    if (!mounted || requestId != _searchRequestId) return;
     setState(() {
       _result = result;
       _isLoading = false;
     });
   }
 
+  void _selectTab(int index) {
+    if (_selectedTab == index) return;
+    setState(() => _selectedTab = index);
+    _runSearch(_controller.text);
+  }
+
+  void _selectSort(String sort) {
+    if (_selectedSort == sort) return;
+    setState(() => _selectedSort = sort);
+    _runSearch(_controller.text);
+  }
+
   int get _resultCount =>
       _result.users.length +
       _result.activities.length +
       _result.posts.length +
+      _result.groups.length +
       _result.topics.length;
 
   @override
@@ -536,13 +628,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       ],
       3 => [_PostsResultSection(posts: _result.posts, showHeader: false)],
-      4 => [_TopicsResultSection(topics: _result.topics, showHeader: false)],
+      4 => [_GroupsResultSection(groups: _result.groups, showHeader: false)],
+      5 => [_TopicsResultSection(topics: _result.topics, showHeader: false)],
       _ => [
         _ResultCountLine(count: _resultCount),
         const SizedBox(height: 18),
         _UsersResultSection(users: _result.users),
         _ActivitiesResultSection(activities: _result.activities),
         _PostsResultSection(posts: _result.posts),
+        _GroupsResultSection(groups: _result.groups),
         _TopicsResultSection(topics: _result.topics),
       ],
     };
@@ -571,8 +665,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                         suffixIcon: IconButton(
                           onPressed: () {
                             _controller.clear();
+                            _searchRequestId++;
                             setState(() {
                               _result = CampusSearchResult.empty();
+                              _isLoading = false;
                             });
                           },
                           icon: const Icon(Icons.cancel, size: 18),
@@ -612,18 +708,59 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            SizedBox(
+              height: 48,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                scrollDirection: Axis.horizontal,
+                itemCount: _tabs.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, i) {
+                  return SizedBox(
+                    width: 58,
+                    child: _SearchResultTab(
+                      label: _tabs[i],
+                      selected: _selectedTab == i,
+                      onTap: () => _selectTab(i),
+                    ),
+                  );
+                },
+              ),
+            ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
               child: Row(
                 children: [
-                  for (var i = 0; i < _tabs.length; i++)
-                    Expanded(
-                      child: _SearchResultTab(
-                        label: _tabs[i],
-                        selected: _selectedTab == i,
-                        onTap: () => setState(() => _selectedTab = i),
+                  for (final option in _sortOptions) ...[
+                    ChoiceChip(
+                      label: Text(option.$2),
+                      selected: _selectedSort == option.$1,
+                      onSelected: (_) => _selectSort(option.$1),
+                      showCheckmark: false,
+                      selectedColor: AppColors.blue.withValues(alpha: 0.12),
+                      labelStyle: TextStyle(
+                        color: _selectedSort == option.$1
+                            ? AppColors.blue
+                            : AppColors.muted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      side: BorderSide(
+                        color: _selectedSort == option.$1
+                            ? AppColors.blue
+                            : AppColors.line,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                  ],
+                  const Spacer(),
+                  Text(
+                    _isLoading ? '搜索中' : '实时结果',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -665,6 +802,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   List<CampusComment> _comments = const [];
   var _isLoadingComments = false;
   var _isSubmitting = false;
+  var _isLiking = false;
+  var _isFavoriting = false;
+  var _isFollowingAuthor = false;
+  late bool _authorFollowed = widget.post.author.followedByMe;
 
   @override
   void initState() {
@@ -704,20 +845,51 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _toggleLike() async {
+    if (_isLiking) return;
+    setState(() => _isLiking = true);
     try {
       final post = await CampusRepository.instance.togglePostLike(_post);
       if (mounted) setState(() => _post = post);
     } catch (error) {
       if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isLiking = false);
     }
   }
 
   Future<void> _toggleFavorite() async {
+    if (_isFavoriting) return;
+    setState(() => _isFavoriting = true);
     try {
+      final wasSaves = _post.saves;
       final post = await CampusRepository.instance.togglePostFavorite(_post);
-      if (mounted) setState(() => _post = post);
+      if (!mounted) return;
+      setState(() => _post = post);
+      _showMessage(context, post.saves > wasSaves ? '已收藏' : '已取消收藏');
     } catch (error) {
       if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isFavoriting = false);
+    }
+  }
+
+  Future<void> _toggleAuthorFollow() async {
+    if (_isFollowingAuthor) return;
+    setState(() => _isFollowingAuthor = true);
+    try {
+      final nextUser = _authorFollowed
+          ? await CampusRepository.instance.unfollowUser(_post.author)
+          : await CampusRepository.instance.followUser(_post.author);
+      if (!mounted) return;
+      setState(() {
+        _authorFollowed = nextUser.followedByMe;
+        _post = _post.copyWith(author: nextUser);
+      });
+      _showMessage(context, _authorFollowed ? '已关注 ${nextUser.name}' : '已取消关注');
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isFollowingAuthor = false);
     }
   }
 
@@ -788,9 +960,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('关注'),
+                onPressed: _isFollowingAuthor ? null : _toggleAuthorFollow,
+                icon: Icon(
+                  _isFollowingAuthor
+                      ? Icons.hourglass_top_rounded
+                      : _authorFollowed
+                      ? Icons.check_rounded
+                      : Icons.add,
+                  size: 18,
+                ),
+                label: Text(
+                  _isFollowingAuthor
+                      ? '处理中'
+                      : _authorFollowed
+                      ? '已关注'
+                      : '关注',
+                ),
               ),
             ],
           ),
@@ -831,19 +1016,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _ActionStat(
-                icon: Icons.favorite,
+                icon: _isLiking ? Icons.hourglass_top_rounded : Icons.favorite,
                 value: post.likes,
                 color: AppColors.red,
-                onTap: _toggleLike,
+                onTap: _isLiking ? null : _toggleLike,
               ),
               _ActionStat(
                 icon: Icons.mode_comment_outlined,
                 value: post.comments,
               ),
               _ActionStat(
-                icon: Icons.star_border_rounded,
+                icon: _isFavoriting
+                    ? Icons.hourglass_top_rounded
+                    : Icons.star_border_rounded,
                 value: post.saves,
-                onTap: _toggleFavorite,
+                onTap: _isFavoriting ? null : _toggleFavorite,
               ),
               _ActionStat(icon: Icons.ios_share_rounded, value: post.shares),
             ],
@@ -954,6 +1141,8 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
   late CampusActivity _activity = widget.activity;
   var _isRegistered = false;
   var _isSubmitting = false;
+  var _isCheckingRegistration = false;
+  var _isFavorite = false;
 
   @override
   void initState() {
@@ -967,6 +1156,60 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
         imageUrl: _activity.posterUrl,
       );
     }).catchError((_) {});
+    _resolveRegistrationStatus();
+    _resolveFavoriteStatus();
+  }
+
+  Future<void> _resolveRegistrationStatus() async {
+    if (_activity.id.isEmpty) return;
+    setState(() => _isCheckingRegistration = true);
+    try {
+      final activities = await CampusRepository.instance.fetchMyActivities();
+      if (!mounted) return;
+      setState(() {
+        _isRegistered = activities.any(
+          (activity) => activity.id == _activity.id,
+        );
+      });
+    } catch (_) {
+      // Keep the default call-to-action for visitors who are not signed in yet.
+    } finally {
+      if (mounted) setState(() => _isCheckingRegistration = false);
+    }
+  }
+
+  Future<void> _resolveFavoriteStatus() async {
+    if (_activity.id.isEmpty) return;
+    try {
+      final favorites = await CampusRepository.instance.fetchFavorites();
+      if (!mounted) return;
+      setState(() {
+        _isFavorite = favorites.any(
+          (record) =>
+              record.kind == 'activity' && record.activity.id == _activity.id,
+        );
+      });
+    } catch (_) {
+      // Keep the default local visual state when favorites cannot be loaded.
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isSubmitting) return;
+    final previousFavorite = _isFavorite;
+    setState(() => _isFavorite = !_isFavorite);
+    try {
+      final activity = await CampusRepository.instance.toggleActivityFavorite(
+        _activity,
+      );
+      if (!mounted) return;
+      setState(() => _activity = activity);
+      _showMessage(context, _isFavorite ? '已加入活动收藏' : '已取消活动收藏');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isFavorite = previousFavorite);
+      _showMessage(context, _friendlyError(error));
+    }
   }
 
   Future<void> _toggleRegistration() async {
@@ -1027,9 +1270,11 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                 ),
               ),
               TextButton.icon(
-                onPressed: () {},
-                icon: const Icon(Icons.star_border_rounded),
-                label: const Text('收藏'),
+                onPressed: _toggleFavorite,
+                icon: Icon(
+                  _isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                ),
+                label: Text(_isFavorite ? '已收藏' : '收藏'),
               ),
             ],
           ),
@@ -1223,11 +1468,15 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                 child: PrimaryButton(
                   label: _isSubmitting
                       ? '处理中...'
+                      : _isCheckingRegistration
+                      ? '同步状态...'
                       : _isRegistered
                       ? '取消报名'
                       : '立即报名',
                   color: _isRegistered ? AppColors.red : AppColors.green,
-                  onPressed: _toggleRegistration,
+                  onPressed: _isCheckingRegistration
+                      ? () {}
+                      : _toggleRegistration,
                 ),
               ),
             ],
@@ -1467,9 +1716,23 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
     }
   }
 
+  Future<void> _openManagedGroups() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MyManagedGroupsScreen()),
+    );
+    if (mounted) _loadDetail();
+  }
+
   @override
   Widget build(BuildContext context) {
     final group = _group;
+    final announcementText = group.announcementText.trim();
+    final sortedDiscussions = [...group.discussions]
+      ..sort((left, right) {
+        if (left.pinnedInGroup == right.pinnedInGroup) return 0;
+        return left.pinnedInGroup ? -1 : 1;
+      });
 
     return Scaffold(
       body: Stack(
@@ -1528,9 +1791,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    const Pill(
-                                      label: '公开',
-                                      color: AppColors.blue,
+                                    Pill(
+                                      label: _groupVisibilityLabel(
+                                        group.visibility,
+                                      ),
+                                      color: _groupVisibilityColor(
+                                        group.visibility,
+                                      ),
                                       selected: true,
                                     ),
                                   ],
@@ -1575,6 +1842,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             for (final tag in group.tags) Pill(label: tag),
                           ],
                         ),
+                        if (announcementText.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          _GroupAnnouncementCard(
+                            text: announcementText,
+                            updatedAt: group.announcementUpdatedAt,
+                            updatedBy: group.announcementUpdatedBy,
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         if (_isLoading) ...[
                           const LinearProgressIndicator(minHeight: 3),
@@ -1630,7 +1905,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         CampusCard(
                           child: Column(
                             children: [
-                              for (final post in group.discussions)
+                              for (final post in sortedDiscussions)
                                 _SimpleDiscussionTile(post: post),
                             ],
                           ),
@@ -1657,7 +1932,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     icon: const Icon(Icons.ios_share),
                   ),
                   IconButton.filledTonal(
-                    onPressed: () {},
+                    onPressed: _openManagedGroups,
                     icon: const Icon(Icons.more_horiz),
                   ),
                 ],
@@ -1677,15 +1952,1553 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           child: PrimaryButton(
             label: _isSubmitting
                 ? '处理中...'
+                : group.canManage
+                ? '进入管理台'
+                : group.membershipStatus == 'pending'
+                ? '申请审核中'
                 : group.joined
                 ? '退出社群'
                 : '申请加入',
-            color: group.joined ? AppColors.red : AppColors.blue,
-            onPressed: _toggleJoin,
+            color: group.canManage
+                ? AppColors.blue
+                : group.joined
+                ? AppColors.red
+                : AppColors.blue,
+            onPressed: group.membershipStatus == 'pending'
+                ? () => _showMessage(context, '入群申请正在审核中')
+                : group.canManage
+                ? _openManagedGroups
+                : _toggleJoin,
           ),
         ),
       ),
     );
+  }
+}
+
+class MyManagedGroupsScreen extends StatefulWidget {
+  const MyManagedGroupsScreen({super.key});
+
+  @override
+  State<MyManagedGroupsScreen> createState() => _MyManagedGroupsScreenState();
+}
+
+class _MyManagedGroupsScreenState extends State<MyManagedGroupsScreen> {
+  late Future<List<CampusGroup>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadGroups();
+  }
+
+  Future<List<CampusGroup>> _loadGroups() {
+    return CampusRepository.instance.fetchManagedGroups();
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = _loadGroups();
+    });
+  }
+
+  Future<void> _openCreate() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const GroupEditorScreen()),
+    );
+    if (changed == true && mounted) _refresh();
+  }
+
+  Future<void> _openManagement(CampusGroup group) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => GroupManagementScreen(group: group)),
+    );
+    if (changed == true && mounted) _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(
+        title: const Text('我管理的社群'),
+        actions: [
+          IconButton(
+            onPressed: _openCreate,
+            icon: const Icon(Icons.add_circle_outline_rounded),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: FutureBuilder<List<CampusGroup>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final groups = snapshot.data ?? const <CampusGroup>[];
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              CampusCard(
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.admin_panel_settings_outlined,
+                      color: AppColors.blue,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        snapshot.connectionState == ConnectionState.waiting
+                            ? '正在同步社群管理数据'
+                            : '当前管理 ${groups.length} 个社群',
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (groups.isEmpty)
+                CampusCard(
+                  child: Column(
+                    children: [
+                      const Icon(
+                        Icons.groups_2_outlined,
+                        size: 46,
+                        color: AppColors.muted,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '你还没有管理中的社群',
+                        style: TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        '现在就创建一个新的校园社群吧',
+                        style: TextStyle(color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 16),
+                      PrimaryButton(label: '创建社群', onPressed: _openCreate),
+                    ],
+                  ),
+                )
+              else
+                for (var index = 0; index < groups.length; index++) ...[
+                  _ManagedGroupCard(
+                    group: groups[index],
+                    onTap: () => _openManagement(groups[index]),
+                  ),
+                  if (index != groups.length - 1) const SizedBox(height: 12),
+                ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class GroupManagementScreen extends StatefulWidget {
+  const GroupManagementScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupManagementScreen> createState() => _GroupManagementScreenState();
+}
+
+class _GroupManagementScreenState extends State<GroupManagementScreen> {
+  late CampusGroup _group;
+  var _isDeleting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _group = widget.group;
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    try {
+      final group = await CampusRepository.instance.fetchGroupDetail(_group);
+      if (mounted) setState(() => _group = group);
+    } catch (_) {}
+  }
+
+  Future<void> _openEdit() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupEditorScreen(initialGroup: _group),
+      ),
+    );
+    if (changed == true && mounted) {
+      await _reload();
+      if (mounted) Navigator.pop(context, true);
+    }
+  }
+
+  Future<void> _openMembers() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupMembersManagementScreen(group: _group),
+      ),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _openJoinRequests() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => GroupJoinRequestsScreen(group: _group)),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _openAnnouncement() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupAnnouncementEditorScreen(group: _group),
+      ),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _openDiscussions() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupDiscussionsManagementScreen(group: _group),
+      ),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _openActivities() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateActivityScreen(groupContext: _group),
+      ),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _deleteGroup() async {
+    if (_group.membershipRole != 'owner' || _isDeleting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('解散社群'),
+        content: Text('确认解散「${_group.name}」吗？这个操作不能撤回。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('解散'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _isDeleting = true);
+    try {
+      await CampusRepository.instance.deleteGroup(_group);
+      if (!mounted) return;
+      _showMessage(context, '社群已解散');
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: const Text('社群管理')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          CampusCard(
+            child: Row(
+              children: [
+                SmartImage(
+                  url: _group.iconUrl,
+                  width: 66,
+                  height: 66,
+                  borderRadius: 16,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _group.name,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${_group.members} 位成员 · ${_group.admins} 位管理员',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          Pill(
+                            label: _groupVisibilityLabel(_group.visibility),
+                            color: _groupVisibilityColor(_group.visibility),
+                          ),
+                          Pill(
+                            label: _groupRoleLabel(_group.membershipRole),
+                            color: AppColors.blue,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          CampusCard(
+            child: Column(
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.blue,
+                  ),
+                  title: const Text('编辑社群资料'),
+                  subtitle: const Text('名称、简介、封面、标签、可见范围'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openEdit,
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.group_outlined,
+                    color: AppColors.purple,
+                  ),
+                  title: const Text('成员管理'),
+                  subtitle: const Text('查看成员，设置管理员，移除成员'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openMembers,
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.how_to_reg_outlined,
+                    color: AppColors.green,
+                  ),
+                  title: const Text('入群申请'),
+                  subtitle: const Text('审核待加入的同学'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openJoinRequests,
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.campaign_outlined,
+                    color: AppColors.orange,
+                  ),
+                  title: const Text('群公告'),
+                  subtitle: const Text('发布或更新社群公告'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openAnnouncement,
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.forum_outlined,
+                    color: AppColors.green,
+                  ),
+                  title: const Text('讨论运营'),
+                  subtitle: const Text('发布群内讨论，设置或取消置顶'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openDiscussions,
+                ),
+                const Divider(),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(
+                    Icons.event_note_outlined,
+                    color: AppColors.blue,
+                  ),
+                  title: const Text('社群活动'),
+                  subtitle: const Text('按社群维度发起活动'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _openActivities,
+                ),
+                if (_group.membershipRole == 'owner') ...[
+                  const Divider(),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: AppColors.red,
+                    ),
+                    title: const Text('解散社群'),
+                    subtitle: Text(_isDeleting ? '处理中...' : '删除社群及其成员关系'),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: _isDeleting ? null : _deleteGroup,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GroupAnnouncementEditorScreen extends StatefulWidget {
+  const GroupAnnouncementEditorScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupAnnouncementEditorScreen> createState() =>
+      _GroupAnnouncementEditorScreenState();
+}
+
+class _GroupAnnouncementEditorScreenState
+    extends State<GroupAnnouncementEditorScreen> {
+  late final TextEditingController _controller;
+  var _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.group.announcementText);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final group = await CampusRepository.instance.updateGroupAnnouncement(
+        group: widget.group,
+        text: _controller.text.trim(),
+      );
+      if (!mounted) return;
+      _showMessage(context, group.announcementText.isEmpty ? '公告已清空' : '公告已更新');
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: const Text('群公告')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          CampusCard(
+            child: TextField(
+              controller: _controller,
+              minLines: 6,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: '写一条要让所有成员第一眼看到的公告',
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          PrimaryButton(
+            label: _isSubmitting ? '保存中...' : '保存公告',
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GroupDiscussionsManagementScreen extends StatefulWidget {
+  const GroupDiscussionsManagementScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupDiscussionsManagementScreen> createState() =>
+      _GroupDiscussionsManagementScreenState();
+}
+
+class _GroupDiscussionsManagementScreenState
+    extends State<GroupDiscussionsManagementScreen> {
+  late CampusGroup _group;
+
+  @override
+  void initState() {
+    super.initState();
+    _group = widget.group;
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    try {
+      final group = await CampusRepository.instance.fetchGroupDetail(_group);
+      if (mounted) setState(() => _group = group);
+    } catch (_) {}
+  }
+
+  Future<void> _createDiscussion() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupDiscussionComposerScreen(group: _group),
+      ),
+    );
+    if (changed == true && mounted) _reload();
+  }
+
+  Future<void> _togglePin(CampusPost post) async {
+    try {
+      final nextGroup = await CampusRepository.instance
+          .toggleGroupDiscussionPin(
+            group: _group,
+            post: post,
+            pinned: !post.pinnedInGroup,
+          );
+      if (!mounted) return;
+      setState(() => _group = nextGroup);
+      _showMessage(context, post.pinnedInGroup ? '已取消置顶' : '已设为置顶');
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final discussions = [..._group.discussions]
+      ..sort((left, right) {
+        if (left.pinnedInGroup == right.pinnedInGroup) return 0;
+        return left.pinnedInGroup ? -1 : 1;
+      });
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(
+        title: const Text('讨论运营'),
+        actions: [
+          IconButton(
+            onPressed: _createDiscussion,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          for (var index = 0; index < discussions.length; index++) ...[
+            CampusCard(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                discussions[index].title,
+                                style: const TextStyle(
+                                  color: AppColors.ink,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            if (discussions[index].pinnedInGroup)
+                              const Pill(label: '置顶', color: AppColors.red),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          discussions[index].body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppColors.text),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          discussions[index].author.name,
+                          style: const TextStyle(color: AppColors.muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    onSelected: (_) => _togglePin(discussions[index]),
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'pin',
+                        child: Text(
+                          discussions[index].pinnedInGroup ? '取消置顶' : '设为置顶',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (index != discussions.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createDiscussion,
+        backgroundColor: AppColors.blue,
+        label: const Text('发布讨论'),
+        icon: const Icon(Icons.edit_outlined),
+      ),
+    );
+  }
+}
+
+class GroupDiscussionComposerScreen extends StatefulWidget {
+  const GroupDiscussionComposerScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupDiscussionComposerScreen> createState() =>
+      _GroupDiscussionComposerScreenState();
+}
+
+class _GroupDiscussionComposerScreenState
+    extends State<GroupDiscussionComposerScreen> {
+  final _titleController = TextEditingController();
+  final _bodyController = TextEditingController();
+  late final TextEditingController _topicController;
+  final _locationController = TextEditingController();
+  var _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _topicController = TextEditingController(text: '${widget.group.name}讨论');
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _bodyController.dispose();
+    _topicController.dispose();
+    _locationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    if (_titleController.text.trim().isEmpty ||
+        _bodyController.text.trim().isEmpty) {
+      _showMessage(context, '请填写讨论标题和内容');
+      return;
+    }
+    setState(() => _isSubmitting = true);
+    try {
+      await CampusRepository.instance.createGroupPost(
+        group: widget.group,
+        title: _titleController.text.trim(),
+        body: _bodyController.text.trim(),
+        topic: _topicController.text.trim(),
+        location: _locationController.text.trim(),
+      );
+      if (!mounted) return;
+      _showMessage(context, '群内讨论已发布');
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: const Text('发布群内讨论')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          CampusCard(
+            child: Column(
+              children: [
+                _GroupFormField(
+                  label: '标题',
+                  controller: _titleController,
+                  hint: '讨论一个值得大家参与的话题',
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '话题',
+                  controller: _topicController,
+                  hint: '例如：编程学习小组讨论',
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '地点',
+                  controller: _locationController,
+                  hint: '线上 / 教学楼 / 图书馆',
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '内容',
+                  controller: _bodyController,
+                  hint: '写下讨论背景、希望大家怎么参与',
+                  minLines: 5,
+                  maxLines: 7,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          PrimaryButton(
+            label: _isSubmitting ? '发布中...' : '发布讨论',
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GroupEditorScreen extends StatefulWidget {
+  const GroupEditorScreen({this.initialGroup, super.key});
+
+  final CampusGroup? initialGroup;
+
+  bool get isEditing => initialGroup != null;
+
+  @override
+  State<GroupEditorScreen> createState() => _GroupEditorScreenState();
+}
+
+class _GroupEditorScreenState extends State<GroupEditorScreen> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _coverUrlController;
+  late final TextEditingController _iconUrlController;
+  late final TextEditingController _tagsController;
+  late String _visibility;
+  var _isSubmitting = false;
+  var _isUploadingCover = false;
+  var _isUploadingIcon = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final group = widget.initialGroup;
+    _nameController = TextEditingController(text: group?.name ?? '');
+    _descriptionController = TextEditingController(
+      text: group?.description ?? '',
+    );
+    _coverUrlController = TextEditingController(
+      text:
+          group?.coverUrl ??
+          'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80',
+    );
+    _iconUrlController = TextEditingController(
+      text:
+          group?.iconUrl ??
+          'https://images.unsplash.com/photo-1516321497487-e288fb19713f?auto=format&fit=crop&w=500&q=80',
+    );
+    _tagsController = TextEditingController(text: group?.tags.join(',') ?? '');
+    _visibility = group?.visibility ?? 'approval';
+  }
+
+  Future<void> _pickGroupImage({required bool cover}) async {
+    if (_isUploadingCover || _isUploadingIcon) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: cover ? 1800 : 900,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      if (cover) {
+        _isUploadingCover = true;
+      } else {
+        _isUploadingIcon = true;
+      }
+    });
+    try {
+      final url = await CampusRepository.instance.uploadImage(
+        picked.path,
+        purpose: cover ? 'group_cover' : 'group_icon',
+      );
+      if (!mounted) return;
+      setState(() {
+        if (cover) {
+          _coverUrlController.text = url;
+        } else {
+          _iconUrlController.text = url;
+        }
+      });
+      _showMessage(context, cover ? '社群封面已上传' : '社群图标已上传');
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (cover) {
+            _isUploadingCover = false;
+          } else {
+            _isUploadingIcon = false;
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _coverUrlController.dispose();
+    _iconUrlController.dispose();
+    _tagsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    if (_nameController.text.trim().isEmpty) {
+      _showMessage(context, '请先填写社群名称');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final tags = _tagsController.text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+      final group = widget.isEditing
+          ? await CampusRepository.instance.updateGroup(
+              group: widget.initialGroup!,
+              name: _nameController.text.trim(),
+              description: _descriptionController.text.trim(),
+              coverUrl: _coverUrlController.text.trim(),
+              iconUrl: _iconUrlController.text.trim(),
+              tags: tags,
+              visibility: _visibility,
+            )
+          : await CampusRepository.instance.createGroup(
+              name: _nameController.text.trim(),
+              description: _descriptionController.text.trim(),
+              coverUrl: _coverUrlController.text.trim(),
+              iconUrl: _iconUrlController.text.trim(),
+              tags: tags,
+              visibility: _visibility,
+            );
+      if (!mounted) return;
+      _showMessage(
+        context,
+        widget.isEditing ? '已更新 ${group.name}' : '已创建 ${group.name}',
+      );
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: Text(widget.isEditing ? '编辑社群' : '创建社群')),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        children: [
+          CampusCard(
+            child: Column(
+              children: [
+                _GroupFormField(
+                  label: '社群名称',
+                  controller: _nameController,
+                  hint: '例如：编程学习小组',
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '社群简介',
+                  controller: _descriptionController,
+                  hint: '介绍社群定位、适合谁加入',
+                  minLines: 3,
+                  maxLines: 4,
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '封面链接',
+                  controller: _coverUrlController,
+                  hint: '请输入封面图片 URL',
+                  trailing: IconButton(
+                    onPressed: _isUploadingCover
+                        ? null
+                        : () => _pickGroupImage(cover: true),
+                    icon: _isUploadingCover
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.upload_rounded),
+                  ),
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '图标链接',
+                  controller: _iconUrlController,
+                  hint: '请输入图标图片 URL',
+                  trailing: IconButton(
+                    onPressed: _isUploadingIcon
+                        ? null
+                        : () => _pickGroupImage(cover: false),
+                    icon: _isUploadingIcon
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.upload_rounded),
+                  ),
+                ),
+                const Divider(),
+                _GroupFormField(
+                  label: '标签',
+                  controller: _tagsController,
+                  hint: '多个标签用逗号分隔',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          CampusCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '加入方式',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final option in const [
+                      'public',
+                      'approval',
+                      'private',
+                    ])
+                      ChoiceChip(
+                        label: Text(_groupVisibilityLabel(option)),
+                        selected: _visibility == option,
+                        onSelected: (_) => setState(() => _visibility = option),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          PrimaryButton(
+            label: _isSubmitting
+                ? (widget.isEditing ? '保存中...' : '创建中...')
+                : (widget.isEditing ? '保存修改' : '创建社群'),
+            onPressed: _submit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class GroupMembersManagementScreen extends StatefulWidget {
+  const GroupMembersManagementScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupMembersManagementScreen> createState() =>
+      _GroupMembersManagementScreenState();
+}
+
+class _GroupMembersManagementScreenState
+    extends State<GroupMembersManagementScreen> {
+  late Future<List<CampusGroupMember>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadMembers();
+  }
+
+  Future<List<CampusGroupMember>> _loadMembers() {
+    return CampusRepository.instance.fetchGroupMembers(widget.group);
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = _loadMembers();
+    });
+  }
+
+  Future<void> _changeRole(CampusGroupMember member, String role) async {
+    try {
+      await CampusRepository.instance.updateGroupMemberRole(
+        group: widget.group,
+        member: member,
+        role: role,
+      );
+      if (!mounted) return;
+      _showMessage(context, role == 'admin' ? '已设为管理员' : '已改为普通成员');
+      _refresh();
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    }
+  }
+
+  Future<void> _removeMember(CampusGroupMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('移除成员'),
+        content: Text('确认将 ${member.user.name} 移出社群吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await CampusRepository.instance.removeGroupMember(
+        group: widget.group,
+        member: member,
+      );
+      if (!mounted) return;
+      _showMessage(context, '成员已移除');
+      _refresh();
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: const Text('成员管理')),
+      body: FutureBuilder<List<CampusGroupMember>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final members = snapshot.data ?? const <CampusGroupMember>[];
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              CampusCard(
+                child: Text(
+                  snapshot.connectionState == ConnectionState.waiting
+                      ? '正在同步成员列表'
+                      : '共 ${members.length} 位成员',
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              for (var index = 0; index < members.length; index++) ...[
+                _GroupMemberCard(
+                  member: members[index],
+                  canPromote:
+                      widget.group.membershipRole == 'owner' &&
+                      members[index].role != 'owner',
+                  canRemove:
+                      members[index].role != 'owner' &&
+                      (widget.group.membershipRole == 'owner' ||
+                          members[index].role == 'member'),
+                  onPromote: members[index].role == 'admin'
+                      ? () => _changeRole(members[index], 'member')
+                      : () => _changeRole(members[index], 'admin'),
+                  onRemove: () => _removeMember(members[index]),
+                ),
+                if (index != members.length - 1) const SizedBox(height: 10),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class GroupJoinRequestsScreen extends StatefulWidget {
+  const GroupJoinRequestsScreen({required this.group, super.key});
+
+  final CampusGroup group;
+
+  @override
+  State<GroupJoinRequestsScreen> createState() =>
+      _GroupJoinRequestsScreenState();
+}
+
+class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
+  late Future<List<CampusGroupMember>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadRequests();
+  }
+
+  Future<List<CampusGroupMember>> _loadRequests() {
+    return CampusRepository.instance.fetchGroupJoinRequests(widget.group);
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = _loadRequests();
+    });
+  }
+
+  Future<void> _review(CampusGroupMember request, bool approved) async {
+    try {
+      await CampusRepository.instance.reviewGroupJoinRequest(
+        group: widget.group,
+        request: request,
+        approved: approved,
+      );
+      if (!mounted) return;
+      _showMessage(context, approved ? '已通过入群申请' : '已拒绝入群申请');
+      _refresh();
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      appBar: AppBar(title: const Text('入群申请')),
+      body: FutureBuilder<List<CampusGroupMember>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final requests = snapshot.data ?? const <CampusGroupMember>[];
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              CampusCard(
+                child: Text(
+                  snapshot.connectionState == ConnectionState.waiting
+                      ? '正在同步申请列表'
+                      : '待审核 ${requests.length} 条申请',
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (requests.isEmpty)
+                const CampusCard(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: Text(
+                        '暂无待审核申请',
+                        style: TextStyle(color: AppColors.muted),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                for (var index = 0; index < requests.length; index++) ...[
+                  _GroupJoinRequestCard(
+                    request: requests[index],
+                    onApprove: () => _review(requests[index], true),
+                    onReject: () => _review(requests[index], false),
+                  ),
+                  if (index != requests.length - 1) const SizedBox(height: 10),
+                ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ManagedGroupCard extends StatelessWidget {
+  const _ManagedGroupCard({required this.group, required this.onTap});
+
+  final CampusGroup group;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Row(
+          children: [
+            SmartImage(
+              url: group.iconUrl,
+              width: 70,
+              height: 70,
+              borderRadius: 18,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.name,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${group.members} 位成员 · ${group.admins} 位管理员',
+                    style: const TextStyle(color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      Pill(
+                        label: _groupRoleLabel(group.membershipRole),
+                        color: AppColors.blue,
+                      ),
+                      Pill(
+                        label: _groupVisibilityLabel(group.visibility),
+                        color: _groupVisibilityColor(group.visibility),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GroupMemberCard extends StatelessWidget {
+  const _GroupMemberCard({
+    required this.member,
+    required this.canPromote,
+    required this.canRemove,
+    required this.onPromote,
+    required this.onRemove,
+  });
+
+  final CampusGroupMember member;
+  final bool canPromote;
+  final bool canRemove;
+  final VoidCallback onPromote;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      child: Row(
+        children: [
+          CampusAvatar(user: member.user, size: 52),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        member.user.name,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Pill(
+                      label: _groupRoleLabel(member.role),
+                      color: member.role == 'owner'
+                          ? AppColors.orange
+                          : member.role == 'admin'
+                          ? AppColors.blue
+                          : AppColors.purple,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${member.user.school} · ${member.user.grade}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          PopupMenuButton<String>(
+            enabled: canPromote || canRemove,
+            onSelected: (value) {
+              if (value == 'promote') onPromote();
+              if (value == 'remove') onRemove();
+            },
+            itemBuilder: (context) => [
+              if (canPromote)
+                PopupMenuItem<String>(
+                  value: 'promote',
+                  child: Text(member.role == 'admin' ? '撤销管理员' : '设为管理员'),
+                ),
+              if (canRemove)
+                const PopupMenuItem<String>(
+                  value: 'remove',
+                  child: Text('移除成员'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupJoinRequestCard extends StatelessWidget {
+  const _GroupJoinRequestCard({
+    required this.request,
+    required this.onApprove,
+    required this.onReject,
+  });
+
+  final CampusGroupMember request;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CampusAvatar(user: request.user, size: 52),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.user.name,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${request.user.school} · ${request.user.grade}',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Pill(label: '待审核', color: AppColors.orange),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onReject,
+                  child: const Text('拒绝'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: onApprove,
+                  child: const Text('通过'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GroupFormField extends StatelessWidget {
+  const _GroupFormField({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    this.minLines = 1,
+    this.maxLines = 1,
+    this.trailing,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final int minLines;
+  final int maxLines;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: maxLines > 1
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 78,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: minLines,
+              maxLines: maxLines,
+              decoration: InputDecoration(
+                hintText: hint,
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+String _groupVisibilityLabel(String value) {
+  switch (value) {
+    case 'public':
+      return '公开加入';
+    case 'private':
+      return '仅邀请';
+    default:
+      return '需审核';
+  }
+}
+
+Color _groupVisibilityColor(String value) {
+  switch (value) {
+    case 'public':
+      return AppColors.green;
+    case 'private':
+      return AppColors.orange;
+    default:
+      return AppColors.blue;
+  }
+}
+
+String _groupRoleLabel(String value) {
+  switch (value) {
+    case 'owner':
+      return '群主';
+    case 'admin':
+      return '管理员';
+    default:
+      return '成员';
   }
 }
 
@@ -1992,6 +3805,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController _gradeController;
   late final TextEditingController _bioController;
   var _isSaving = false;
+  var _isUploadingAvatar = false;
 
   @override
   void initState() {
@@ -2002,6 +3816,31 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _majorController = TextEditingController(text: _user.major);
     _gradeController = TextEditingController(text: _user.grade);
     _bioController = TextEditingController(text: _user.bio);
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_isUploadingAvatar) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 900,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final url = await CampusRepository.instance.uploadImage(
+        picked.path,
+        purpose: 'avatar',
+      );
+      if (!mounted) return;
+      setState(() => _user = _user.copyWith(avatarUrl: url));
+      _showMessage(context, '头像已上传');
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
+    }
   }
 
   @override
@@ -2060,22 +3899,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Stack(
-                      children: [
-                        CampusAvatar(user: _user, size: 86),
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
+                    InkWell(
+                      onTap: _pickAvatar,
+                      borderRadius: BorderRadius.circular(44),
+                      child: Stack(
+                        children: [
+                          CampusAvatar(user: _user, size: 86),
+                          Positioned(
+                            right: 0,
+                            bottom: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: _isUploadingAvatar
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.photo_camera, size: 18),
                             ),
-                            child: const Icon(Icons.photo_camera, size: 18),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                     const SizedBox(width: 20),
                     Expanded(
@@ -2465,6 +4316,34 @@ class _PostsResultSection extends StatelessWidget {
   }
 }
 
+class _GroupsResultSection extends StatelessWidget {
+  const _GroupsResultSection({required this.groups, this.showHeader = true});
+
+  final List<CampusGroup> groups;
+  final bool showHeader;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ResultGroup(
+      title: '社群',
+      showHeader: showHeader,
+      emptyLabel: '暂无匹配社群',
+      isEmpty: groups.isEmpty,
+      child: CampusCard(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        child: Column(
+          children: [
+            for (var i = 0; i < groups.take(3).length; i++) ...[
+              _LargeGroupResultTile(group: groups[i]),
+              if (i != groups.take(3).length - 1) const Divider(height: 1),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TopicsResultSection extends StatelessWidget {
   const _TopicsResultSection({required this.topics, this.showHeader = true});
 
@@ -2535,13 +4414,42 @@ class _ResultGroup extends StatelessWidget {
   }
 }
 
-class _LargeUserResultTile extends StatelessWidget {
+class _LargeUserResultTile extends StatefulWidget {
   const _LargeUserResultTile({required this.user});
 
   final CampusUser user;
 
   @override
+  State<_LargeUserResultTile> createState() => _LargeUserResultTileState();
+}
+
+class _LargeUserResultTileState extends State<_LargeUserResultTile> {
+  late CampusUser _user = widget.user;
+  var _isSubmitting = false;
+
+  Future<void> _toggleFollow() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+    try {
+      final nextUser = _user.followedByMe
+          ? await CampusRepository.instance.unfollowUser(_user)
+          : await CampusRepository.instance.followUser(_user);
+      if (!mounted) return;
+      setState(() => _user = nextUser);
+      _showMessage(
+        context,
+        nextUser.followedByMe ? '已关注 ${nextUser.name}' : '已取消关注',
+      );
+    } catch (error) {
+      if (mounted) _showMessage(context, _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final user = _user;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
@@ -2568,7 +4476,7 @@ class _LargeUserResultTile extends StatelessWidget {
             ),
           ),
           OutlinedButton(
-            onPressed: () {},
+            onPressed: _isSubmitting ? null : _toggleFollow,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.blue,
               side: const BorderSide(color: AppColors.blue),
@@ -2577,7 +4485,13 @@ class _LargeUserResultTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(22),
               ),
             ),
-            child: const Text('关注'),
+            child: Text(
+              _isSubmitting
+                  ? '处理中'
+                  : user.followedByMe
+                  ? '已关注'
+                  : '关注',
+            ),
           ),
         ],
       ),
@@ -2720,6 +4634,41 @@ class _LargePostResultCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _LargeGroupResultTile extends StatelessWidget {
+  const _LargeGroupResultTile({required this.group});
+
+  final CampusGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 8),
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SmartImage(url: group.iconUrl, width: 48, height: 48),
+      ),
+      title: Text(
+        group.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.w900),
+      ),
+      subtitle: Text(
+        '${group.members}人 · ${group.tags.take(2).join(' / ')}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => GroupDetailScreen(group: group)),
+        );
+      },
     );
   }
 }
@@ -3088,6 +5037,55 @@ class _GroupActivityTile extends StatelessWidget {
   }
 }
 
+class _GroupAnnouncementCard extends StatelessWidget {
+  const _GroupAnnouncementCard({
+    required this.text,
+    required this.updatedAt,
+    required this.updatedBy,
+  });
+
+  final String text;
+  final String updatedAt;
+  final CampusUser? updatedBy;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.campaign_rounded, color: AppColors.orange),
+              const SizedBox(width: 8),
+              const Text(
+                '群公告',
+                style: TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(text, style: Theme.of(context).textTheme.bodyLarge),
+          if (updatedAt.isNotEmpty || updatedBy != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              [
+                if (updatedBy != null) updatedBy!.name,
+                if (updatedAt.isNotEmpty) _formatGroupMetaTime(updatedAt),
+              ].join(' · '),
+              style: const TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _SimpleDiscussionTile extends StatelessWidget {
   const _SimpleDiscussionTile({required this.post});
 
@@ -3098,7 +5096,16 @@ class _SimpleDiscussionTile extends StatelessWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: CampusAvatar(user: post.author, size: 42),
-      title: Text(post.title),
+      title: Row(
+        children: [
+          Expanded(child: Text(post.title)),
+          if (post.pinnedInGroup)
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: Pill(label: '置顶', color: AppColors.red),
+            ),
+        ],
+      ),
       subtitle: Text(post.body, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -3120,6 +5127,16 @@ class _SimpleDiscussionTile extends StatelessWidget {
       },
     );
   }
+}
+
+String _formatGroupMetaTime(String value) {
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) return value;
+  final month = parsed.month.toString().padLeft(2, '0');
+  final day = parsed.day.toString().padLeft(2, '0');
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  return '$month-$day $hour:$minute';
 }
 
 class _ProfileEditRow extends StatelessWidget {

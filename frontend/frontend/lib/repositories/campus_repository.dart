@@ -27,19 +27,49 @@ class CampusRepository {
     }
   }
 
-  Future<CampusSearchResult> search(String query) async {
+  Future<CampusDiscover> fetchDiscover() async {
+    try {
+      final discover = await _apiClient.fetchDiscover();
+      return _normalizeDiscover(discover);
+    } catch (_) {
+      return _normalizeDiscover(CampusDiscover.fromFeed(_cachedFeed));
+    }
+  }
+
+  Future<CampusSearchResult> search(
+    String query, {
+    String type = 'all',
+    String? category,
+    String sort = 'relevance',
+  }) async {
     final trimmedQuery = query.trim();
     if (trimmedQuery.isEmpty) return CampusSearchResult.empty();
 
     try {
-      final result = await _apiClient.search(trimmedQuery);
+      final result = await _apiClient.search(
+        trimmedQuery,
+        type: type,
+        category: category,
+        sort: sort,
+      );
       final normalized = _normalizeSearchResult(result);
       if (_hasAnyResult(normalized)) return normalized;
     } catch (_) {
       // Search falls back to the current feed so the UI stays useful offline.
     }
 
-    return _localSearch(trimmedQuery, _cachedFeed);
+    return _filterSearchResult(
+      _sortSearchResult(_localSearch(trimmedQuery, _cachedFeed), sort),
+      type,
+    );
+  }
+
+  Future<String> uploadImage(String filePath, {String purpose = 'general'}) {
+    return _apiClient.uploadImage(
+      token: _requireToken(),
+      filePath: filePath,
+      purpose: purpose,
+    );
   }
 
   Future<CampusUser> login({
@@ -208,10 +238,120 @@ class CampusRepository {
     );
   }
 
+  Future<CampusActivity> createActivity({
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final activity = await _apiClient.createActivity(
+      token: _requireToken(),
+      title: title,
+      category: category,
+      date: date,
+      time: time,
+      location: location,
+      host: host,
+      capacity: capacity,
+      price: price,
+      description: description,
+      tags: tags,
+      allowComments: allowComments,
+      publicDisplay: publicDisplay,
+      posterUrl: posterUrl,
+    );
+    final enriched = _enrichActivity(activity, _cachedFeed.users);
+    _cachedFeed = CampusFeed(
+      users: _cachedFeed.users,
+      posts: _cachedFeed.posts,
+      activities: [enriched, ..._cachedFeed.activities],
+      groups: _cachedFeed.groups,
+      topics: _cachedFeed.topics,
+    );
+    return enriched;
+  }
+
+  Future<CampusActivity> updateActivity({
+    required CampusActivity activity,
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final id = _requireActivityId(activity);
+    return _replaceCachedActivity(
+      await _apiClient.updateActivity(
+        token: _requireToken(),
+        activityId: id,
+        title: title,
+        category: category,
+        date: date,
+        time: time,
+        location: location,
+        host: host,
+        capacity: capacity,
+        price: price,
+        description: description,
+        tags: tags,
+        allowComments: allowComments,
+        publicDisplay: publicDisplay,
+        posterUrl: posterUrl,
+      ),
+    );
+  }
+
+  Future<void> deleteActivity(CampusActivity activity) async {
+    final id = _requireActivityId(activity);
+    await _apiClient.deleteActivity(token: _requireToken(), activityId: id);
+    _removeCachedActivity(id);
+  }
+
+  Future<({String code, CampusActivity activity})> resetActivityCheckInCode(
+    CampusActivity activity,
+  ) async {
+    final id = _requireActivityId(activity);
+    final result = await _apiClient.resetActivityCheckInCode(
+      token: _requireToken(),
+      activityId: id,
+    );
+    return (
+      code: result.code,
+      activity: _replaceCachedActivity(result.activity),
+    );
+  }
+
   Future<CampusActivity> cancelActivityJoin(CampusActivity activity) async {
     final id = _requireActivityId(activity);
     return _replaceCachedActivity(
       await _apiClient.cancelActivityJoin(
+        token: _requireToken(),
+        activityId: id,
+      ),
+    );
+  }
+
+  Future<CampusActivity> toggleActivityFavorite(CampusActivity activity) async {
+    final id = _requireActivityId(activity);
+    return _replaceCachedActivity(
+      await _apiClient.toggleActivityFavorite(
         token: _requireToken(),
         activityId: id,
       ),
@@ -225,6 +365,25 @@ class CampusRepository {
     return activities
         .map((activity) => _enrichActivity(activity, _cachedFeed.users))
         .toList(growable: false);
+  }
+
+  Future<List<CampusActivity>> fetchCreatedActivities() async {
+    final activities = await _apiClient.fetchCreatedActivities(
+      token: _requireToken(),
+    );
+    return activities
+        .map((activity) => _enrichActivity(activity, _cachedFeed.users))
+        .toList(growable: false);
+  }
+
+  Future<List<CampusActivityEnrollment>> fetchActivityEnrollments(
+    CampusActivity activity,
+  ) {
+    final id = _requireActivityId(activity);
+    return _apiClient.fetchActivityEnrollments(
+      token: _requireToken(),
+      activityId: id,
+    );
   }
 
   Future<CampusCheckInRecord> checkInWithCode({
@@ -368,8 +527,33 @@ class CampusRepository {
     return _apiClient.markNotificationsRead(token: _requireToken());
   }
 
+  Future<CampusNotificationRecord> markNotificationRead(String notificationId) {
+    if (notificationId.isEmpty) {
+      throw const CampusApiException('这条通知暂未同步到后端');
+    }
+    return _apiClient.markNotificationRead(
+      token: _requireToken(),
+      notificationId: notificationId,
+    );
+  }
+
+  Future<void> deleteNotification(String notificationId) {
+    if (notificationId.isEmpty) {
+      throw const CampusApiException('这条通知暂未同步到后端');
+    }
+    return _apiClient.deleteNotification(
+      token: _requireToken(),
+      notificationId: notificationId,
+    );
+  }
+
   Future<List<CampusConversation>> fetchConversations() {
     return _apiClient.fetchConversations(token: _requireToken());
+  }
+
+  Future<CampusConversation> startConversation(CampusUser user) {
+    final id = _requireUserId(user);
+    return _apiClient.startConversation(token: _requireToken(), userId: id);
   }
 
   Future<List<CampusChatMessage>> fetchConversationMessages(
@@ -417,9 +601,235 @@ class CampusRepository {
     return groups.map(_enrichGroup).toList(growable: false);
   }
 
+  Future<List<CampusGroup>> fetchManagedGroups() async {
+    final groups = await _apiClient.fetchManagedGroups(token: _requireToken());
+    return groups.map(_enrichGroup).toList(growable: false);
+  }
+
   Future<CampusGroup> fetchGroupDetail(CampusGroup group) async {
     final id = _requireGroupId(group);
-    return _enrichGroup(await _apiClient.fetchGroupDetail(id));
+    return _enrichGroup(
+      await _apiClient.fetchGroupDetail(id, token: AuthSession.token),
+    );
+  }
+
+  Future<CampusGroup> createGroup({
+    required String name,
+    required String description,
+    required String coverUrl,
+    required String iconUrl,
+    required List<String> tags,
+    required String visibility,
+  }) async {
+    final group = await _apiClient.createGroup(
+      token: _requireToken(),
+      name: name,
+      description: description,
+      coverUrl: coverUrl,
+      iconUrl: iconUrl,
+      tags: tags,
+      visibility: visibility,
+    );
+    final enriched = _enrichGroup(group);
+    _cachedFeed = CampusFeed(
+      users: _cachedFeed.users,
+      posts: _cachedFeed.posts,
+      activities: _cachedFeed.activities,
+      groups: [enriched, ..._cachedFeed.groups],
+      topics: _cachedFeed.topics,
+    );
+    return enriched;
+  }
+
+  Future<CampusGroup> updateGroup({
+    required CampusGroup group,
+    required String name,
+    required String description,
+    required String coverUrl,
+    required String iconUrl,
+    required List<String> tags,
+    required String visibility,
+  }) async {
+    final id = _requireGroupId(group);
+    return _replaceCachedGroup(
+      await _apiClient.updateGroup(
+        token: _requireToken(),
+        groupId: id,
+        name: name,
+        description: description,
+        coverUrl: coverUrl,
+        iconUrl: iconUrl,
+        tags: tags,
+        visibility: visibility,
+      ),
+    );
+  }
+
+  Future<CampusGroup> updateGroupAnnouncement({
+    required CampusGroup group,
+    required String text,
+  }) async {
+    final id = _requireGroupId(group);
+    return _replaceCachedGroup(
+      await _apiClient.updateGroupAnnouncement(
+        token: _requireToken(),
+        groupId: id,
+        text: text,
+      ),
+    );
+  }
+
+  Future<CampusPost> createGroupPost({
+    required CampusGroup group,
+    required String title,
+    required String body,
+    required String topic,
+    required String location,
+    List<String> images = const [],
+  }) async {
+    final groupId = _requireGroupId(group);
+    final post = await _apiClient.createGroupPost(
+      token: _requireToken(),
+      groupId: groupId,
+      title: title,
+      body: body,
+      topic: topic,
+      location: location,
+      images: images,
+    );
+    final nextPost = _replaceCachedPost(post);
+    final updatedGroup = group.copyWith(
+      discussions: [nextPost, ...group.discussions],
+    );
+    _replaceCachedGroup(updatedGroup);
+    return nextPost;
+  }
+
+  Future<CampusGroup> toggleGroupDiscussionPin({
+    required CampusGroup group,
+    required CampusPost post,
+    required bool pinned,
+  }) async {
+    final groupId = _requireGroupId(group);
+    final postId = _requirePostId(post);
+    return _replaceCachedGroup(
+      await _apiClient.toggleGroupDiscussionPin(
+        token: _requireToken(),
+        groupId: groupId,
+        postId: postId,
+        pinned: pinned,
+      ),
+    );
+  }
+
+  Future<CampusActivity> createGroupActivity({
+    required CampusGroup group,
+    required String title,
+    required String category,
+    required String date,
+    required String time,
+    required String location,
+    required String host,
+    required int capacity,
+    required String price,
+    required String description,
+    required List<String> tags,
+    required bool allowComments,
+    required bool publicDisplay,
+    required String posterUrl,
+  }) async {
+    final groupId = _requireGroupId(group);
+    final activity = await _apiClient.createGroupActivity(
+      token: _requireToken(),
+      groupId: groupId,
+      title: title,
+      category: category,
+      date: date,
+      time: time,
+      location: location,
+      host: host,
+      capacity: capacity,
+      price: price,
+      description: description,
+      tags: tags,
+      allowComments: allowComments,
+      publicDisplay: publicDisplay,
+      posterUrl: posterUrl,
+    );
+    final enrichedActivity = _replaceCachedActivity(activity);
+    final updatedGroup = group.copyWith(
+      activities: [enrichedActivity, ...group.activities],
+    );
+    _replaceCachedGroup(updatedGroup);
+    return enrichedActivity;
+  }
+
+  Future<void> deleteGroup(CampusGroup group) async {
+    final id = _requireGroupId(group);
+    await _apiClient.deleteGroup(token: _requireToken(), groupId: id);
+    _removeCachedGroup(id);
+  }
+
+  Future<List<CampusGroupMember>> fetchGroupMembers(CampusGroup group) {
+    final id = _requireGroupId(group);
+    return _apiClient.fetchGroupMembers(token: _requireToken(), groupId: id);
+  }
+
+  Future<List<CampusGroupMember>> fetchGroupJoinRequests(CampusGroup group) {
+    final id = _requireGroupId(group);
+    return _apiClient.fetchGroupJoinRequests(
+      token: _requireToken(),
+      groupId: id,
+    );
+  }
+
+  Future<CampusGroupMember> reviewGroupJoinRequest({
+    required CampusGroup group,
+    required CampusGroupMember request,
+    required bool approved,
+  }) {
+    final groupId = _requireGroupId(group);
+    if (request.id.isEmpty) {
+      throw const CampusApiException('这条申请暂未同步到后端');
+    }
+    return _apiClient.reviewGroupJoinRequest(
+      token: _requireToken(),
+      groupId: groupId,
+      membershipId: request.id,
+      approved: approved,
+    );
+  }
+
+  Future<CampusGroupMember> updateGroupMemberRole({
+    required CampusGroup group,
+    required CampusGroupMember member,
+    required String role,
+  }) {
+    final groupId = _requireGroupId(group);
+    if (member.id.isEmpty) {
+      throw const CampusApiException('这位成员暂未同步到后端');
+    }
+    return _apiClient.updateGroupMemberRole(
+      token: _requireToken(),
+      groupId: groupId,
+      membershipId: member.id,
+      role: role,
+    );
+  }
+
+  Future<void> removeGroupMember({
+    required CampusGroup group,
+    required CampusGroupMember member,
+  }) {
+    final groupId = _requireGroupId(group);
+    if (member.id.isEmpty) {
+      throw const CampusApiException('这位成员暂未同步到后端');
+    }
+    return _apiClient.removeGroupMember(
+      token: _requireToken(),
+      groupId: groupId,
+      membershipId: member.id,
+    );
   }
 
   Future<CampusTopic> fetchTopicDetail(CampusTopic topic) async {
@@ -484,6 +894,87 @@ class CampusRepository {
           .toList(growable: false),
       groups: result.groups,
       topics: result.topics,
+    );
+  }
+
+  CampusSearchResult _filterSearchResult(
+    CampusSearchResult result,
+    String type,
+  ) {
+    return switch (type) {
+      'users' => CampusSearchResult(
+        users: result.users,
+        posts: const [],
+        activities: const [],
+        groups: const [],
+        topics: const [],
+      ),
+      'activities' => CampusSearchResult(
+        users: const [],
+        posts: const [],
+        activities: result.activities,
+        groups: const [],
+        topics: const [],
+      ),
+      'posts' => CampusSearchResult(
+        users: const [],
+        posts: result.posts,
+        activities: const [],
+        groups: const [],
+        topics: const [],
+      ),
+      'groups' => CampusSearchResult(
+        users: const [],
+        posts: const [],
+        activities: const [],
+        groups: result.groups,
+        topics: const [],
+      ),
+      'topics' => CampusSearchResult(
+        users: const [],
+        posts: const [],
+        activities: const [],
+        groups: const [],
+        topics: result.topics,
+      ),
+      _ => result,
+    };
+  }
+
+  CampusSearchResult _sortSearchResult(CampusSearchResult result, String sort) {
+    if (sort != 'popular') return result;
+    return CampusSearchResult(
+      users: [...result.users]
+        ..sort((left, right) => right.followers.compareTo(left.followers)),
+      posts: [...result.posts]
+        ..sort(
+          (left, right) => (right.likes + right.comments + right.saves)
+              .compareTo(left.likes + left.comments + left.saves),
+        ),
+      activities: [...result.activities]
+        ..sort((left, right) => right.enrolled.compareTo(left.enrolled)),
+      groups: [...result.groups]
+        ..sort((left, right) => right.members.compareTo(left.members)),
+      topics: [...result.topics]
+        ..sort((left, right) => right.onlineCount.compareTo(left.onlineCount)),
+    );
+  }
+
+  CampusDiscover _normalizeDiscover(CampusDiscover discover) {
+    return CampusDiscover(
+      hotSearches: discover.hotSearches.isEmpty
+          ? CampusDiscover.fromFeed(_cachedFeed).hotSearches
+          : discover.hotSearches,
+      trendingPosts: discover.trendingPosts,
+      upcomingActivities: discover.upcomingActivities
+          .map((activity) => _enrichActivity(activity, _cachedFeed.users))
+          .toList(growable: false),
+      recommendedGroups: discover.recommendedGroups
+          .map(_enrichGroup)
+          .toList(growable: false),
+      featuredTopics: discover.featuredTopics
+          .map(_enrichTopic)
+          .toList(growable: false),
     );
   }
 
@@ -630,6 +1121,24 @@ class CampusRepository {
     return enriched;
   }
 
+  void _removeCachedActivity(String activityId) {
+    List<CampusActivity> remove(List<CampusActivity> activities) {
+      return activities
+          .where((activity) => activity.id != activityId)
+          .toList(growable: false);
+    }
+
+    _cachedFeed = CampusFeed(
+      users: _cachedFeed.users,
+      posts: _cachedFeed.posts,
+      activities: remove(_cachedFeed.activities),
+      groups: _cachedFeed.groups
+          .map((group) => group.copyWith(activities: remove(group.activities)))
+          .toList(growable: false),
+      topics: _cachedFeed.topics,
+    );
+  }
+
   CampusGroup _replaceCachedGroup(CampusGroup nextGroup) {
     final enriched = _enrichGroup(nextGroup);
     _cachedFeed = CampusFeed(
@@ -642,6 +1151,18 @@ class CampusRepository {
       topics: _cachedFeed.topics,
     );
     return enriched;
+  }
+
+  void _removeCachedGroup(String groupId) {
+    _cachedFeed = CampusFeed(
+      users: _cachedFeed.users,
+      posts: _cachedFeed.posts,
+      activities: _cachedFeed.activities,
+      groups: _cachedFeed.groups
+          .where((group) => group.id != groupId)
+          .toList(growable: false),
+      topics: _cachedFeed.topics,
+    );
   }
 
   String _requireToken() {

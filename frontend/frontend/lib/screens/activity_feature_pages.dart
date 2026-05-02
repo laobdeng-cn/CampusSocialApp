@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
 import '../models/campus_models.dart';
@@ -238,8 +239,22 @@ class _MyParticipatedActivitiesScreenState
   }
 }
 
-class FavoriteActivitiesScreen extends StatelessWidget {
+class FavoriteActivitiesScreen extends StatefulWidget {
   const FavoriteActivitiesScreen({super.key});
+
+  @override
+  State<FavoriteActivitiesScreen> createState() =>
+      _FavoriteActivitiesScreenState();
+}
+
+class _FavoriteActivitiesScreenState extends State<FavoriteActivitiesScreen> {
+  late Future<List<CampusFavoriteRecord>> _favoritesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _favoritesFuture = CampusRepository.instance.fetchFavorites();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -257,30 +272,45 @@ class FavoriteActivitiesScreen extends StatelessWidget {
         ),
         SizedBox(width: 18),
       ],
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 18),
-        children: [
-          const _FilterBar(labels: ['全部', '文艺', '讲座', '体育', '志愿']),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 14, 18, 12),
-            child: Text(
-              '共收藏 12 个活动',
-              style: TextStyle(color: AppColors.muted, fontSize: 15),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Column(
-              children: [
-                for (final item in _activityItems.take(4))
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _FavoriteActivityCard(item: item),
-                  ),
-              ],
-            ),
-          ),
-        ],
+      child: FutureBuilder<List<CampusFavoriteRecord>>(
+        future: _favoritesFuture,
+        builder: (context, snapshot) {
+          final remoteItems = (snapshot.data ?? const <CampusFavoriteRecord>[])
+              .where((record) => record.kind == 'activity')
+              .map((record) => _ActivityItem.fromActivity(record.activity))
+              .toList(growable: false);
+          final items = remoteItems.isNotEmpty
+              ? remoteItems
+              : _activityItems.take(4).toList(growable: false);
+
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 18),
+            children: [
+              const _FilterBar(labels: ['全部', '文艺', '讲座', '体育', '志愿']),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                child: Text(
+                  snapshot.connectionState == ConnectionState.waiting
+                      ? '正在同步收藏活动'
+                      : '共收藏 ${remoteItems.isEmpty ? 12 : remoteItems.length} 个活动',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 15),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Column(
+                  children: [
+                    for (final item in items)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _FavoriteActivityCard(item: item),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -399,121 +429,405 @@ class _CheckInRecordsScreenState extends State<CheckInRecordsScreen> {
   }
 }
 
-class ActivityNotificationsScreen extends StatelessWidget {
+class ActivityNotificationsScreen extends StatefulWidget {
   const ActivityNotificationsScreen({super.key});
+
+  @override
+  State<ActivityNotificationsScreen> createState() =>
+      _ActivityNotificationsScreenState();
+}
+
+class _ActivityNotificationsScreenState
+    extends State<ActivityNotificationsScreen> {
+  late Future<List<CampusNotificationRecord>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadNotifications();
+  }
+
+  Future<List<CampusNotificationRecord>> _loadNotifications() async {
+    final records = await CampusRepository.instance.fetchNotifications(
+      category: 'notice',
+    );
+    return records
+        .where((record) => record.action.contains('activity'))
+        .toList(growable: false);
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      await CampusRepository.instance.markNotificationsRead();
+      if (!mounted) return;
+      setState(() {
+        _future = _loadNotifications();
+      });
+      _showFeatureMessage(context, '活动通知已全部标记为已读');
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '活动通知',
-      actions: const [
-        Text(
-          '全部已读',
-          style: TextStyle(
-            color: AppColors.blue,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        SizedBox(width: 18),
-      ],
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 24),
-        children: [
-          const _FilterBar(labels: ['全部', '报名', '提醒', '变更']),
-          const SizedBox(height: 10),
-          const ColoredBox(
-            color: AppColors.surface,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(12, 14, 12, 0),
-              child: Column(
-                children: [
-                  _NotificationCard(
-                    icon: Icons.event_available_rounded,
-                    color: AppColors.green,
-                    title: '报名成功',
-                    body: '你已成功报名「AI 未来发展趋势讲座」',
-                    time: '2分钟前',
-                  ),
-                  _NotificationCard(
-                    icon: Icons.notifications_none_rounded,
-                    color: AppColors.blue,
-                    title: '活动提醒',
-                    body: '「校园篮球友谊赛」即将开始',
-                    time: '30分钟前',
-                  ),
-                  _NotificationCard(
-                    icon: Icons.error_outline_rounded,
-                    color: AppColors.orange,
-                    title: '活动变更',
-                    body: '「摄影社团采风活动」时间调整通知',
-                    time: '1小时前',
-                  ),
-                  _NotificationCard(
-                    icon: Icons.block_rounded,
-                    color: AppColors.red,
-                    title: '活动取消',
-                    body: '「校园音乐之夜」活动已取消',
-                    time: '昨天 20:15',
-                  ),
-                  _NotificationCard(
-                    icon: Icons.groups_rounded,
-                    color: AppColors.purple,
-                    title: '候补成功',
-                    body: '你已候补成功「AI 未来发展趋势讲座」名额，欢迎参加！',
-                    time: '昨天 18:32',
-                  ),
-                  Padding(
-                    padding: EdgeInsets.only(top: 10, bottom: 22),
-                    child: Text(
-                      '已加载全部通知',
-                      style: TextStyle(color: AppColors.muted),
-                    ),
-                  ),
-                ],
-              ),
+      actions: [
+        TextButton(
+          onPressed: _markAllRead,
+          child: const Text(
+            '全部已读',
+            style: TextStyle(
+              color: AppColors.blue,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ],
+        ),
+        const SizedBox(width: 8),
+      ],
+      child: FutureBuilder<List<CampusNotificationRecord>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final records = snapshot.data ?? const <CampusNotificationRecord>[];
+          final hasRemote = records.isNotEmpty;
+
+          return ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              const _FilterBar(labels: ['全部', '报名', '提醒', '变更']),
+              const SizedBox(height: 10),
+              ColoredBox(
+                color: AppColors.surface,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
+                  child: Column(
+                    children: [
+                      if (snapshot.connectionState == ConnectionState.waiting &&
+                          !hasRemote)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 32, bottom: 18),
+                          child: CircularProgressIndicator(
+                            color: AppColors.blue,
+                          ),
+                        ),
+                      if (hasRemote)
+                        for (final record in records)
+                          _NotificationCard(
+                            icon: _activityNoticeIconFor(record.action),
+                            color: _activityNoticeColorFor(record.action),
+                            title: record.title,
+                            body: _activityNoticeBody(record),
+                            time: _friendlyFeatureTime(record.createdAt),
+                            showUnreadDot: record.unread,
+                          )
+                      else if (snapshot.connectionState !=
+                          ConnectionState.waiting) ...[
+                        const _NotificationCard(
+                          icon: Icons.event_available_rounded,
+                          color: AppColors.green,
+                          title: '报名成功',
+                          body: '你已成功报名「AI 未来发展趋势讲座」',
+                          time: '2分钟前',
+                        ),
+                        const _NotificationCard(
+                          icon: Icons.notifications_none_rounded,
+                          color: AppColors.blue,
+                          title: '活动提醒',
+                          body: '「校园篮球友谊赛」即将开始',
+                          time: '30分钟前',
+                        ),
+                        const _NotificationCard(
+                          icon: Icons.error_outline_rounded,
+                          color: AppColors.orange,
+                          title: '活动变更',
+                          body: '「摄影社团采风活动」时间调整通知',
+                          time: '1小时前',
+                        ),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10, bottom: 22),
+                        child: Text(
+                          hasRemote ? '已加载全部通知' : '暂无新的活动通知',
+                          style: const TextStyle(color: AppColors.muted),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
+String _activityNoticeBody(CampusNotificationRecord record) {
+  final secondLine = record.secondLine.trim();
+  if (secondLine.isEmpty) return record.firstLine;
+  return '${record.firstLine}\n$secondLine';
+}
+
+Color _activityNoticeColorFor(String action) {
+  if (action.contains('cancel')) return AppColors.red;
+  if (action.contains('updated')) return AppColors.orange;
+  if (action.contains('checkin')) return AppColors.purple;
+  if (action.contains('enrollment')) return AppColors.blue;
+  return AppColors.green;
+}
+
+IconData _activityNoticeIconFor(String action) {
+  if (action.contains('cancel')) return Icons.block_rounded;
+  if (action.contains('checkin')) return Icons.qr_code_rounded;
+  if (action.contains('updated')) return Icons.edit_calendar_rounded;
+  if (action.contains('enrollment')) return Icons.groups_rounded;
+  return Icons.event_available_rounded;
+}
+
 class CreateActivityScreen extends StatefulWidget {
-  const CreateActivityScreen({super.key});
+  const CreateActivityScreen({
+    this.initialActivity,
+    this.groupContext,
+    super.key,
+  });
+
+  final CampusActivity? initialActivity;
+  final CampusGroup? groupContext;
+
+  bool get isEditing => initialActivity != null;
 
   @override
   State<CreateActivityScreen> createState() => _CreateActivityScreenState();
 }
 
 class _CreateActivityScreenState extends State<CreateActivityScreen> {
-  bool allowComments = true;
-  bool publicDisplay = true;
+  late final TextEditingController _titleController;
+  late final TextEditingController _dateController;
+  late final TextEditingController _timeController;
+  late final TextEditingController _locationController;
+  late final TextEditingController _capacityController;
+  late final TextEditingController _priceController;
+  late final TextEditingController _hostController;
+  late final TextEditingController _descriptionController;
+  late final TextEditingController _tagsController;
+  late String _posterUrl;
+  late String _selectedCategory;
+  late bool allowComments;
+  late bool publicDisplay;
+  var _isSubmitting = false;
+  var _isUploadingCover = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialActivity;
+    _titleController = TextEditingController(text: initial?.title ?? '');
+    _dateController = TextEditingController(
+      text: initial?.date ?? '2026-05-20',
+    );
+    _timeController = TextEditingController(text: initial?.time ?? '19:00');
+    _locationController = TextEditingController(
+      text: initial?.location ?? '大学生活动中心',
+    );
+    _capacityController = TextEditingController(
+      text: (initial?.capacity ?? 120).toString(),
+    );
+    _priceController = TextEditingController(text: initial?.price ?? '免费');
+    _hostController = TextEditingController(text: initial?.host ?? '校学生会');
+    _descriptionController = TextEditingController(
+      text: initial?.description ?? '',
+    );
+    _tagsController = TextEditingController(
+      text: initial == null ? '交流,互动,校园' : initial.highlights.join(','),
+    );
+    _posterUrl = initial?.posterUrl ?? _stageImage;
+    _selectedCategory = initial?.category ?? '文艺';
+    allowComments = true;
+    publicDisplay = true;
+  }
+
+  Future<void> _pickCover() async {
+    if (_isUploadingCover) return;
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 1800,
+    );
+    if (picked == null) return;
+
+    setState(() => _isUploadingCover = true);
+    try {
+      final url = await CampusRepository.instance.uploadImage(
+        picked.path,
+        purpose: 'activity_poster',
+      );
+      if (!mounted) return;
+      setState(() => _posterUrl = url);
+      _showFeatureMessage(context, '活动封面已上传');
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    } finally {
+      if (mounted) setState(() => _isUploadingCover = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _dateController.dispose();
+    _timeController.dispose();
+    _locationController.dispose();
+    _capacityController.dispose();
+    _priceController.dispose();
+    _hostController.dispose();
+    _descriptionController.dispose();
+    _tagsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    if (_titleController.text.trim().isEmpty ||
+        _descriptionController.text.trim().isEmpty) {
+      _showFeatureMessage(context, '请先填写活动名称和活动简介');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+    try {
+      final tags = _tagsController.text
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList(growable: false);
+      final activity = widget.isEditing
+          ? await CampusRepository.instance.updateActivity(
+              activity: widget.initialActivity!,
+              title: _titleController.text.trim(),
+              category: _selectedCategory,
+              date: _dateController.text.trim(),
+              time: _timeController.text.trim(),
+              location: _locationController.text.trim(),
+              host: _hostController.text.trim(),
+              capacity: int.tryParse(_capacityController.text.trim()) ?? 100,
+              price: _priceController.text.trim().isEmpty
+                  ? '免费'
+                  : _priceController.text.trim(),
+              description: _descriptionController.text.trim(),
+              tags: tags,
+              allowComments: allowComments,
+              publicDisplay: publicDisplay,
+              posterUrl: _posterUrl,
+            )
+          : widget.groupContext != null
+          ? await CampusRepository.instance.createGroupActivity(
+              group: widget.groupContext!,
+              title: _titleController.text.trim(),
+              category: _selectedCategory,
+              date: _dateController.text.trim(),
+              time: _timeController.text.trim(),
+              location: _locationController.text.trim(),
+              host: _hostController.text.trim(),
+              capacity: int.tryParse(_capacityController.text.trim()) ?? 100,
+              price: _priceController.text.trim().isEmpty
+                  ? '免费'
+                  : _priceController.text.trim(),
+              description: _descriptionController.text.trim(),
+              tags: tags,
+              allowComments: allowComments,
+              publicDisplay: publicDisplay,
+              posterUrl: _posterUrl,
+            )
+          : await CampusRepository.instance.createActivity(
+              title: _titleController.text.trim(),
+              category: _selectedCategory,
+              date: _dateController.text.trim(),
+              time: _timeController.text.trim(),
+              location: _locationController.text.trim(),
+              host: _hostController.text.trim(),
+              capacity: int.tryParse(_capacityController.text.trim()) ?? 100,
+              price: _priceController.text.trim().isEmpty
+                  ? '免费'
+                  : _priceController.text.trim(),
+              description: _descriptionController.text.trim(),
+              tags: tags,
+              allowComments: allowComments,
+              publicDisplay: publicDisplay,
+              posterUrl: _posterUrl,
+            );
+      if (!mounted) return;
+      _showFeatureMessage(
+        context,
+        widget.isEditing
+            ? '活动已更新：${activity.title}'
+            : widget.groupContext != null
+            ? '社群活动已发布：${activity.title}'
+            : '活动已发布：${activity.title}',
+      );
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
-      title: '发起活动',
-      actions: const [
-        Text(
-          '发布',
-          style: TextStyle(
-            color: AppColors.blue,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
+      title: widget.isEditing
+          ? '编辑活动'
+          : widget.groupContext != null
+          ? '发起社群活动'
+          : '发起活动',
+      actions: [
+        if (widget.groupContext == null)
+          TextButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MyCreatedActivitiesScreen(),
+                ),
+              );
+            },
+            child: const Text(
+              '我发起的',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
           ),
-        ),
-        SizedBox(width: 18),
+        const SizedBox(width: 8),
       ],
       child: ListView(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
         children: [
-          const _CoverUploadCard(),
+          _CoverUploadCard(
+            imageUrl: _posterUrl,
+            isUploading: _isUploadingCover,
+            onTap: _pickCover,
+          ),
           const SizedBox(height: 12),
-          const _CreateFormMainCard(),
+          _CreateFormMainCard(
+            titleController: _titleController,
+            dateController: _dateController,
+            timeController: _timeController,
+            locationController: _locationController,
+            capacityController: _capacityController,
+            priceController: _priceController,
+            hostController: _hostController,
+            selectedCategory: _selectedCategory,
+            onCategoryChanged: (value) {
+              setState(() => _selectedCategory = value);
+            },
+          ),
           const SizedBox(height: 12),
-          const _CreateDescriptionCard(),
+          _CreateDescriptionCard(
+            descriptionController: _descriptionController,
+            tagsController: _tagsController,
+          ),
           const SizedBox(height: 12),
           _SwitchSettingsCard(
             allowComments: allowComments,
@@ -525,20 +839,241 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           SizedBox(
             height: 52,
             child: FilledButton(
-              onPressed: () {},
+              onPressed: _isSubmitting ? null : _submit,
               style: FilledButton.styleFrom(
                 backgroundColor: AppColors.blue,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              child: const Text(
-                '预览并发布',
+              child: Text(
+                _isSubmitting
+                    ? (widget.isEditing ? '保存中...' : '发布中...')
+                    : (widget.isEditing ? '保存修改' : '预览并发布'),
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class MyCreatedActivitiesScreen extends StatefulWidget {
+  const MyCreatedActivitiesScreen({super.key});
+
+  @override
+  State<MyCreatedActivitiesScreen> createState() =>
+      _MyCreatedActivitiesScreenState();
+}
+
+class _MyCreatedActivitiesScreenState extends State<MyCreatedActivitiesScreen> {
+  late Future<List<CampusActivity>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadActivities();
+  }
+
+  Future<List<CampusActivity>> _loadActivities() {
+    return CampusRepository.instance.fetchCreatedActivities();
+  }
+
+  void _refresh() {
+    setState(() {
+      _future = _loadActivities();
+    });
+  }
+
+  Future<void> _editActivity(CampusActivity activity) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CreateActivityScreen(initialActivity: activity),
+      ),
+    );
+    if (changed == true && mounted) _refresh();
+  }
+
+  Future<void> _resetCheckInCode(CampusActivity activity) async {
+    try {
+      final result = await CampusRepository.instance.resetActivityCheckInCode(
+        activity,
+      );
+      if (!mounted) return;
+      _refresh();
+      _showFeatureMessage(context, '新的签到口令：${result.code}');
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    }
+  }
+
+  Future<void> _deleteActivity(CampusActivity activity) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除活动'),
+        content: Text('确认删除「${activity.title}」吗？已报名同学会收到取消通知。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true) return;
+
+    try {
+      await CampusRepository.instance.deleteActivity(activity);
+      if (!mounted) return;
+      _refresh();
+      _showFeatureMessage(context, '活动已删除');
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FeatureScaffold(
+      title: '我发起的活动',
+      child: FutureBuilder<List<CampusActivity>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final remoteItems = (snapshot.data ?? const <CampusActivity>[])
+              .map(_ActivityItem.fromActivity)
+              .toList(growable: false);
+          final items = remoteItems.isNotEmpty
+              ? remoteItems
+              : [_activityItems[0], _activityItems[1]];
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+            children: [
+              Text(
+                snapshot.connectionState == ConnectionState.waiting
+                    ? '正在同步你发起的活动'
+                    : '共 ${items.length} 个活动',
+                style: const TextStyle(color: AppColors.muted, fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              for (var index = 0; index < items.length; index++) ...[
+                _ManagedActivityCard(
+                  item: items[index],
+                  onTapRoster: remoteItems.isEmpty
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ActivityEnrollmentRosterScreen(
+                                activity: snapshot.data![index],
+                              ),
+                            ),
+                          );
+                        },
+                  onTapEdit: remoteItems.isEmpty
+                      ? null
+                      : () => _editActivity(snapshot.data![index]),
+                  onTapResetCode: remoteItems.isEmpty
+                      ? null
+                      : () => _resetCheckInCode(snapshot.data![index]),
+                  onTapDelete: remoteItems.isEmpty
+                      ? null
+                      : () => _deleteActivity(snapshot.data![index]),
+                ),
+                if (index != items.length - 1) const SizedBox(height: 12),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class ActivityEnrollmentRosterScreen extends StatefulWidget {
+  const ActivityEnrollmentRosterScreen({required this.activity, super.key});
+
+  final CampusActivity activity;
+
+  @override
+  State<ActivityEnrollmentRosterScreen> createState() =>
+      _ActivityEnrollmentRosterScreenState();
+}
+
+class _ActivityEnrollmentRosterScreenState
+    extends State<ActivityEnrollmentRosterScreen> {
+  late Future<List<CampusActivityEnrollment>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = CampusRepository.instance.fetchActivityEnrollments(
+      widget.activity,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _FeatureScaffold(
+      title: '报名名单',
+      child: FutureBuilder<List<CampusActivityEnrollment>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final enrollments =
+              snapshot.data ?? const <CampusActivityEnrollment>[];
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+            children: [
+              CampusCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.activity.title,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      '已报名 ${enrollments.length} / ${widget.activity.capacity} 人',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final enrollment in enrollments) ...[
+                _EnrollmentUserCard(enrollment: enrollment),
+                const SizedBox(height: 10),
+              ],
+              if (enrollments.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 24),
+                  child: Center(
+                    child: Text(
+                      '暂时还没有报名同学',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1441,6 +1976,7 @@ class _NotificationCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.time,
+    this.showUnreadDot = true,
   });
 
   final IconData icon;
@@ -1448,6 +1984,7 @@ class _NotificationCard extends StatelessWidget {
   final String title;
   final String body;
   final String time;
+  final bool showUnreadDot;
 
   @override
   Widget build(BuildContext context) {
@@ -1509,15 +2046,17 @@ class _NotificationCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          Container(
-            width: 9,
-            height: 9,
-            decoration: const BoxDecoration(
-              color: AppColors.blue,
-              shape: BoxShape.circle,
+          if (showUnreadDot) ...[
+            const SizedBox(width: 10),
+            Container(
+              width: 9,
+              height: 9,
+              decoration: const BoxDecoration(
+                color: AppColors.blue,
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1671,18 +2210,21 @@ class _BigOutlineButton extends StatelessWidget {
     required this.icon,
     required this.label,
     this.filled = false,
+    this.danger = false,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
   final bool filled;
+  final bool danger;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final accent = danger ? AppColors.red : AppColors.blue;
     return Material(
-      color: filled ? AppColors.blue : Colors.white,
+      color: filled ? accent : Colors.white,
       borderRadius: BorderRadius.circular(13),
       child: InkWell(
         onTap: onTap,
@@ -1691,22 +2233,18 @@ class _BigOutlineButton extends StatelessWidget {
           height: 46,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.blue),
+            border: Border.all(color: accent),
             borderRadius: BorderRadius.circular(13),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                color: filled ? Colors.white : AppColors.blue,
-                size: 22,
-              ),
+              Icon(icon, color: filled ? Colors.white : accent, size: 22),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
-                  color: filled ? Colors.white : AppColors.blue,
+                  color: filled ? Colors.white : accent,
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -2779,7 +3317,15 @@ class _LegendDot extends StatelessWidget {
 }
 
 class _CoverUploadCard extends StatelessWidget {
-  const _CoverUploadCard();
+  const _CoverUploadCard({
+    required this.imageUrl,
+    required this.onTap,
+    this.isUploading = false,
+  });
+
+  final String imageUrl;
+  final bool isUploading;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2811,28 +3357,65 @@ class _CoverUploadCard extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            width: 150,
-            height: 96,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFAFBFD),
-              border: Border.all(
-                color: const Color(0xFFD9DFEA),
-                style: BorderStyle.solid,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.photo_camera_outlined,
-                  color: AppColors.blue,
-                  size: 34,
+          InkWell(
+            onTap: isUploading ? null : onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: 150,
+              height: 96,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFBFD),
+                border: Border.all(
+                  color: const Color(0xFFD9DFEA),
+                  style: BorderStyle.solid,
                 ),
-                SizedBox(height: 8),
-                Text('上传封面', style: TextStyle(color: AppColors.text)),
-              ],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl.isNotEmpty
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        SmartImage(url: imageUrl, borderRadius: 12),
+                        ColoredBox(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          child: Center(
+                            child: isUploading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  )
+                                : const Icon(
+                                    Icons.upload_rounded,
+                                    color: Colors.white,
+                                    size: 34,
+                                  ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        isUploading
+                            ? const SizedBox(
+                                width: 26,
+                                height: 26,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.photo_camera_outlined,
+                                color: AppColors.blue,
+                                size: 34,
+                              ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isUploading ? '上传中' : '上传封面',
+                          style: const TextStyle(color: AppColors.text),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],
@@ -2842,63 +3425,93 @@ class _CoverUploadCard extends StatelessWidget {
 }
 
 class _CreateFormMainCard extends StatelessWidget {
-  const _CreateFormMainCard();
+  const _CreateFormMainCard({
+    required this.titleController,
+    required this.dateController,
+    required this.timeController,
+    required this.locationController,
+    required this.capacityController,
+    required this.priceController,
+    required this.hostController,
+    required this.selectedCategory,
+    required this.onCategoryChanged,
+  });
+
+  final TextEditingController titleController;
+  final TextEditingController dateController;
+  final TextEditingController timeController;
+  final TextEditingController locationController;
+  final TextEditingController capacityController;
+  final TextEditingController priceController;
+  final TextEditingController hostController;
+  final String selectedCategory;
+  final ValueChanged<String> onCategoryChanged;
 
   @override
   Widget build(BuildContext context) {
     return CampusCard(
       padding: EdgeInsets.zero,
       child: Column(
-        children: const [
-          _FormRow(label: '活动名称', hint: '请输入活动名称（2-30字）', required: true),
-          Divider(),
-          _CategoryFormRow(),
-          Divider(),
-          _FormRow(
+        children: [
+          _FormInputRow(
+            label: '活动名称',
+            controller: titleController,
+            hint: '请输入活动名称（2-30字）',
+            required: true,
+          ),
+          const Divider(),
+          _CategoryFormRow(
+            selectedCategory: selectedCategory,
+            onChanged: onCategoryChanged,
+          ),
+          const Divider(),
+          _FormInputRow(
+            label: '活动日期',
+            controller: dateController,
+            hint: '例如 2026-05-20',
+            icon: Icons.event_outlined,
+            required: true,
+          ),
+          const Divider(),
+          _FormInputRow(
             label: '开始时间',
-            hint: '选择开始时间',
+            controller: timeController,
+            hint: '例如 19:00',
             icon: Icons.schedule_rounded,
             required: true,
-            trailing: Icons.chevron_right_rounded,
           ),
-          Divider(),
-          _FormRow(
-            label: '结束时间',
-            hint: '选择结束时间',
-            icon: Icons.schedule_rounded,
-            required: true,
-            trailing: Icons.chevron_right_rounded,
-          ),
-          Divider(),
-          _FormRow(
+          const Divider(),
+          _FormInputRow(
             label: '活动地点',
+            controller: locationController,
             hint: '请输入详细地点',
             icon: Icons.location_on_outlined,
             required: true,
-            trailing: Icons.map_outlined,
           ),
-          Divider(),
-          _FormRow(
+          const Divider(),
+          _FormInputRow(
             label: '人数上限',
+            controller: capacityController,
             hint: '请输入人数上限',
             icon: Icons.groups_2_outlined,
             required: true,
             suffix: '人',
+            keyboardType: TextInputType.number,
           ),
-          Divider(),
-          _FormRow(
+          const Divider(),
+          _FormInputRow(
             label: '费用',
+            controller: priceController,
             hint: '免费或输入费用',
             icon: Icons.currency_yen_rounded,
-            suffix: '元',
           ),
-          Divider(),
-          _FormRow(
+          const Divider(),
+          _FormInputRow(
             label: '主办方',
+            controller: hostController,
             hint: '请输入主办方名称',
             icon: Icons.apartment_rounded,
             required: true,
-            trailing: Icons.chevron_right_rounded,
           ),
         ],
       ),
@@ -2907,7 +3520,13 @@ class _CreateFormMainCard extends StatelessWidget {
 }
 
 class _CategoryFormRow extends StatelessWidget {
-  const _CategoryFormRow();
+  const _CategoryFormRow({
+    required this.selectedCategory,
+    required this.onChanged,
+  });
+
+  final String selectedCategory;
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -2921,16 +3540,16 @@ class _CategoryFormRow extends StatelessWidget {
             child: Wrap(
               spacing: 6,
               runSpacing: 8,
-              children: const [
-                _FormCategoryChip(label: '文艺', selected: true),
-                _FormCategoryChip(label: '体育'),
-                _FormCategoryChip(label: '讲座'),
-                _FormCategoryChip(label: '志愿'),
-                _FormCategoryChip(label: '社团'),
+              children: [
+                for (final category in const ['文艺', '体育', '讲座', '志愿', '社团'])
+                  _FormCategoryChip(
+                    label: category,
+                    selected: selectedCategory == category,
+                    onTap: () => onChanged(category),
+                  ),
               ],
             ),
           ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.text),
         ],
       ),
     );
@@ -2938,48 +3557,58 @@ class _CategoryFormRow extends StatelessWidget {
 }
 
 class _FormCategoryChip extends StatelessWidget {
-  const _FormCategoryChip({required this.label, this.selected = false});
+  const _FormCategoryChip({
+    required this.label,
+    this.selected = false,
+    this.onTap,
+  });
 
   final String label;
   final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: selected ? AppColors.blue : Colors.white,
-        border: Border.all(color: selected ? AppColors.blue : AppColors.line),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? Colors.white : AppColors.text,
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.blue : Colors.white,
+          border: Border.all(color: selected ? AppColors.blue : AppColors.line),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : AppColors.text,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
   }
 }
 
-class _FormRow extends StatelessWidget {
-  const _FormRow({
+class _FormInputRow extends StatelessWidget {
+  const _FormInputRow({
     required this.label,
+    required this.controller,
     required this.hint,
     this.icon,
     this.required = false,
-    this.trailing,
     this.suffix,
+    this.keyboardType,
   });
 
   final String label;
+  final TextEditingController controller;
   final String hint;
   final IconData? icon;
   final bool required;
-  final IconData? trailing;
   final String? suffix;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -2994,11 +3623,19 @@ class _FormRow extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(
-            child: Text(
-              hint,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFFADB5C2), fontSize: 15),
+            child: TextField(
+              controller: controller,
+              keyboardType: keyboardType,
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                hintText: hint,
+                hintStyle: const TextStyle(
+                  color: Color(0xFFADB5C2),
+                  fontSize: 15,
+                ),
+                isDense: true,
+              ),
+              style: const TextStyle(color: AppColors.text, fontSize: 15),
             ),
           ),
           if (suffix != null)
@@ -3006,7 +3643,6 @@ class _FormRow extends StatelessWidget {
               suffix!,
               style: const TextStyle(color: AppColors.text, fontSize: 15),
             ),
-          if (trailing != null) Icon(trailing, color: AppColors.text, size: 25),
         ],
       ),
     );
@@ -3050,7 +3686,13 @@ class _FormLabel extends StatelessWidget {
 }
 
 class _CreateDescriptionCard extends StatelessWidget {
-  const _CreateDescriptionCard();
+  const _CreateDescriptionCard({
+    required this.descriptionController,
+    required this.tagsController,
+  });
+
+  final TextEditingController descriptionController;
+  final TextEditingController tagsController;
 
   @override
   Widget build(BuildContext context) {
@@ -3066,50 +3708,40 @@ class _CreateDescriptionCard extends StatelessWidget {
                 const _FormLabel(label: '活动简介', required: true),
                 const SizedBox(height: 10),
                 Container(
-                  height: 88,
+                  height: 120,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: AppColors.line),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '请输入活动简介，介绍活动内容、亮点与安排等（10-500字）',
-                          style: TextStyle(
-                            color: Color(0xFFADB5C2),
-                            fontSize: 14,
-                          ),
-                        ),
+                  child: TextField(
+                    controller: descriptionController,
+                    minLines: 4,
+                    maxLines: 5,
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      hintText: '请输入活动简介，介绍活动内容、亮点与安排等（10-500字）',
+                      hintStyle: TextStyle(
+                        color: Color(0xFFADB5C2),
+                        fontSize: 14,
                       ),
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Text(
-                          '0/500',
-                          style: TextStyle(color: AppColors.muted),
-                        ),
-                      ),
-                    ],
+                    ),
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 14,
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
           const Divider(),
-          const _FormRow(
+          _FormInputRow(
             label: '亮点标签',
-            hint: '选择活动亮点标签（可多选）',
+            controller: tagsController,
+            hint: '多个标签用逗号分隔',
             icon: Icons.sell_outlined,
-            trailing: Icons.chevron_right_rounded,
-          ),
-          const Divider(),
-          const _FormRow(
-            label: '报名截止时间',
-            hint: '选择报名截止时间',
-            icon: Icons.schedule_rounded,
-            trailing: Icons.chevron_right_rounded,
           ),
         ],
       ),
@@ -3153,6 +3785,169 @@ class _SwitchSettingsCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ManagedActivityCard extends StatelessWidget {
+  const _ManagedActivityCard({
+    required this.item,
+    this.onTapRoster,
+    this.onTapEdit,
+    this.onTapResetCode,
+    this.onTapDelete,
+  });
+
+  final _ActivityItem item;
+  final VoidCallback? onTapRoster;
+  final VoidCallback? onTapEdit;
+  final VoidCallback? onTapResetCode;
+  final VoidCallback? onTapDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SmartImage(
+                url: item.imageUrl,
+                width: 118,
+                height: 118,
+                borderRadius: 10,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _MetaLine(
+                      icon: Icons.schedule_rounded,
+                      label: '${item.date} ${item.time}',
+                    ),
+                    const SizedBox(height: 8),
+                    _MetaLine(
+                      icon: Icons.location_on_outlined,
+                      label: item.location,
+                    ),
+                    const SizedBox(height: 8),
+                    _MetaLine(
+                      icon: Icons.groups_2_outlined,
+                      label: '${item.people} / ${item.capacity} 人已报名',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _BigOutlineButton(
+                  icon: Icons.format_list_bulleted_rounded,
+                  label: '报名名单',
+                  onTap: onTapRoster,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _BigOutlineButton(
+                  icon: Icons.edit_outlined,
+                  label: '编辑活动',
+                  onTap: onTapEdit,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _BigOutlineButton(
+                  icon: Icons.qr_code_rounded,
+                  label: '重置口令',
+                  onTap: onTapResetCode,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _BigOutlineButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: '删除活动',
+                  danger: true,
+                  onTap: onTapDelete,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EnrollmentUserCard extends StatelessWidget {
+  const _EnrollmentUserCard({required this.enrollment});
+
+  final CampusActivityEnrollment enrollment;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        children: [
+          CampusAvatar(user: enrollment.user, size: 52),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  enrollment.user.name,
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${enrollment.user.school} · ${enrollment.user.grade}',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            _friendlyFeatureTime(enrollment.createdAt),
+            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _friendlyFeatureTime(String value) {
+  final parsed = DateTime.tryParse(value)?.toLocal();
+  if (parsed == null) return value;
+  final month = parsed.month.toString().padLeft(2, '0');
+  final day = parsed.day.toString().padLeft(2, '0');
+  final hour = parsed.hour.toString().padLeft(2, '0');
+  final minute = parsed.minute.toString().padLeft(2, '0');
+  return '$month-$day $hour:$minute';
 }
 
 class _SwitchRow extends StatelessWidget {
@@ -3241,6 +4036,7 @@ class _ActivityItem {
     required this.time,
     required this.location,
     required this.people,
+    required this.capacity,
     required this.guests,
     this.registered = false,
   });
@@ -3258,6 +4054,7 @@ class _ActivityItem {
       time: activity.time,
       location: activity.location,
       people: activity.enrolled,
+      capacity: activity.capacity,
       guests: activity.guests,
       registered: true,
     );
@@ -3270,6 +4067,7 @@ class _ActivityItem {
   final String time;
   final String location;
   final int people;
+  final int capacity;
   final List<CampusUser> guests;
   final bool registered;
 }
@@ -3424,6 +4222,7 @@ const _activityItems = [
     time: '19:00-21:30',
     location: '大学生活动中心大礼堂',
     people: 328,
+    capacity: 500,
     registered: false,
     guests: [kexin, zihao, siyu, xiaobei, xiaochen],
   ),
@@ -3438,6 +4237,7 @@ const _activityItems = [
     time: '14:00-16:00',
     location: '图书馆报告厅',
     people: 256,
+    capacity: 300,
     registered: false,
     guests: [xiaobei, zihao, kexin, siyu, xiaochen],
   ),
@@ -3452,6 +4252,7 @@ const _activityItems = [
     time: '18:30-20:30',
     location: '东区篮球场',
     people: 192,
+    capacity: 260,
     registered: true,
     guests: [zihao, siyu, xiaobei, kexin, xiaochen],
   ),
@@ -3466,6 +4267,7 @@ const _activityItems = [
     time: '09:00-12:00',
     location: '南山植物园',
     people: 78,
+    capacity: 100,
     registered: false,
     guests: [kexin, zihao, xiaobei, siyu, xiaochen],
   ),
@@ -3480,6 +4282,7 @@ const _activityItems = [
     time: '13:30-17:00',
     location: '校外社区服务中心',
     people: 163,
+    capacity: 220,
     registered: false,
     guests: [kexin, siyu, xiaobei, xiaochen, zihao],
   ),
