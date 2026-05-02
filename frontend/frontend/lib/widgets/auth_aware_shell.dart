@@ -46,7 +46,12 @@ class _AuthAwareCampusShellState extends State<AuthAwareCampusShell> {
 
   bool _needsLogin(Object error) {
     final text = error.toString().toLowerCase();
-    return text.contains('401') || text.contains('unauthorized');
+    return text.contains('401') ||
+        text.contains('unauthorized') ||
+        text.contains('token expired') ||
+        text.contains('invalid token') ||
+        text.contains('登录已过期') ||
+        text.contains('未登录');
   }
 
   Future<void> _goLogin(String message) async {
