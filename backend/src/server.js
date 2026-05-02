@@ -6,6 +6,7 @@ const path = require('path');
 
 const { connectToMongo } = require('./db');
 const apiRoutes = require('./routes');
+const { seedDemoData } = require('./seedDemoData');
 
 dotenv.config();
 
@@ -38,8 +39,20 @@ app.use((request, response) => {
   });
 });
 
-connectToMongo().finally(() => {
-  app.listen(port, () => {
-    console.log(`Campus Social API listening on http://localhost:${port}`);
+app.use((error, _request, response, _next) => {
+  console.error(error);
+  response.status(500).json({
+    message: error.message || '服务器内部错误',
   });
 });
+
+connectToMongo()
+  .then(seedDemoData)
+  .catch((error) => {
+    console.warn(`Demo data seed skipped. ${error.message}`);
+  })
+  .finally(() => {
+    app.listen(port, () => {
+      console.log(`Campus Social API listening on http://localhost:${port}`);
+    });
+  });
