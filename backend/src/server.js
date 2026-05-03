@@ -6,6 +6,7 @@ const path = require('path');
 
 const { connectToMongo } = require('./db');
 const apiRoutes = require('./routes');
+const feedRoutes = require('./feedRoutes');
 const { seedDemoData } = require('./seedDemoData');
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.get('/health', (_request, response) => {
   });
 });
 
+app.use('/api', feedRoutes);
 app.use('/api', apiRoutes);
 
 app.use((request, response) => {
