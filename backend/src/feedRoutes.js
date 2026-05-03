@@ -7,6 +7,13 @@ const seed = require('./data/seed');
 
 const router = express.Router();
 
+const legacyActivityTitleMap = {
+  campus_music_night: '校园音乐之夜',
+  ai_future_talk: 'AI 未来发展趋势讲座',
+  campus_basketball_match: '校园篮球友谊赛',
+  photo_club_walk: '摄影社团采风活动',
+};
+
 function publicUser(user) {
   if (!user) return null;
   const plain = typeof user.toObject === 'function' ? user.toObject() : user;
@@ -29,6 +36,40 @@ function serializeActivity(activity) {
       : plain.createdAt,
   };
 }
+
+router.use(async (request, _response, next) => {
+  try {
+    if (!isMongoReady()) {
+      next();
+      return;
+    }
+
+    const match = request.url.match(/^\/activities\/([^/?#]+)/);
+    if (!match) {
+      next();
+      return;
+    }
+
+    const legacyId = decodeURIComponent(match[1]);
+    const title = legacyActivityTitleMap[legacyId];
+    if (!title) {
+      next();
+      return;
+    }
+
+    const activity = await Activity.findOne({ title }).select('_id').lean();
+    if (activity?._id) {
+      request.url = request.url.replace(
+        `/activities/${encodeURIComponent(legacyId)}`,
+        `/activities/${activity._id}`
+      );
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/feed', async (_request, response, next) => {
   try {
