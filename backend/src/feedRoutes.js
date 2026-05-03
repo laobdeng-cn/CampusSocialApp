@@ -17,6 +17,8 @@ const legacyActivityTitleMap = {
   photo_club_walk: '摄影社团采风活动',
 };
 
+const MINUTE = 60 * 1000;
+
 function readBearerToken(request) {
   const header = request.get('authorization') || '';
   const [scheme, token] = header.split(' ');
@@ -59,11 +61,147 @@ function publicUser(user) {
   };
 }
 
-function serializeActivity(activity) {
+function parseActivitySchedule(activity) {
+  const plain = typeof activity?.toObject === 'function' ? activity.toObject() : activity;
+  const dateText = String(plain?.date || '');
+  const timeText = String(plain?.time || '');
+  const dateMatch = dateText.match(/(\d{1,2})月(\d{1,2})日/);
+  const timeMatch = timeText.match(/(\d{1,2}):(\d{2})(?:\s*[-–—]\s*(\d{1,2}):(\d{2}))?/);
+
+  if (!dateMatch || !timeMatch) return null;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = Number(dateMatch[1]) - 1;
+  const day = Number(dateMatch[2]);
+  const startHour = Number(timeMatch[1]);
+  const startMinute = Number(timeMatch[2]);
+  const endHour = timeMatch[3] == null ? startHour + 2 : Number(timeMatch[3]);
+  const endMinute = timeMatch[4] == null ? startMinute : Number(timeMatch[4]);
+
+  const startAt = new Date(year, month, day, startHour, startMinute, 0, 0);
+  const endAt = new Date(year, month, day, endHour, endMinute, 0, 0);
+  if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime())) return null;
+
+  if (endAt.getTime() <= startAt.getTime()) {
+    endAt.setDate(endAt.getDate() + 1);
+  }
+
+  return {
+    startAt,
+    endAt,
+    checkInStartAt: startAt,
+    checkInEndAt: endAt,
+  };
+}
+
+function buildActivityTimeline(activity, checkedIn = false) {
+  const schedule = parseActivitySchedule(activity);
+  if (!schedule) {
+    return {
+      activityStatus: checkedIn ? 'checked_in' : 'registered',
+      checkInStatus: checkedIn ? 'checked_in' : 'available',
+      statusText: checkedIn ? '已签到' : '可签到',
+      countdownText: '',
+    };
+  }
+
+  const now = Date.now();
+  const startMs = schedule.startAt.getTime();
+  const endMs = schedule.endAt.getTime();
+  const diffMinutes = Math.max(0, Math.ceil((startMs - now) / MINUTE));
+  const diffDays = Math.floor(diffMinutes / (60 * 24));
+  const diffHours = Math.floor((diffMinutes % (60 * 24)) / 60);
+  const diffRestMinutes = diffMinutes % 60;
+  const countdownText = now < startMs
+    ? diffDays > 0
+      ? `距离签到开始还有 ${diffDays} 天 ${diffHours} 小时`
+      : diffHours > 0
+        ? `距离签到开始还有 ${diffHours} 小时 ${diffRestMinutes} 分钟`
+        : `距离签到开始还有 ${diffRestMinutes} 分钟`
+    : '';
+
+  if (now > endMs) {
+    return {
+      startAt: schedule.startAt.toISOString(),
+      endAt: schedule.endAt.toISOString(),
+      checkInStartAt: schedule.checkInStartAt.toISOString(),
+      checkInEndAt: schedule.checkInEndAt.toISOString(),
+      activityStatus: 'ended',
+      checkInStatus: 'ended',
+      statusText: '活动已结束',
+      countdownText: '',
+    };
+  }
+
+  if (checkedIn) {
+    return {
+      startAt: schedule.startAt.toISOString(),
+      endAt: schedule.endAt.toISOString(),
+      checkInStartAt: schedule.checkInStartAt.toISOString(),
+      checkInEndAt: schedule.checkInEndAt.toISOString(),
+      activityStatus: 'checked_in',
+      checkInStatus: 'checked_in',
+      statusText: '已签到',
+      countdownText: '',
+    };
+  }
+
+  if (now < startMs) {
+    return {
+      startAt: schedule.startAt.toISOString(),
+      endAt: schedule.endAt.toISOString(),
+      checkInStartAt: schedule.checkInStartAt.toISOString(),
+      checkInEndAt: schedule.checkInEndAt.toISOString(),
+      activityStatus: 'registered',
+      checkInStatus: 'not_started',
+      statusText: '签到未开始',
+      countdownText,
+    };
+  }
+
+  return {
+    startAt: schedule.startAt.toISOString(),
+    endAt: schedule.endAt.toISOString(),
+    checkInStartAt: schedule.checkInStartAt.toISOString(),
+    checkInEndAt: schedule.checkInEndAt.toISOString(),
+    activityStatus: 'checkin_available',
+    checkInStatus: 'available',
+    statusText: '可签到',
+    countdownText: '',
+  };
+}
+
+function assertCheckInWindow(activity, response) {
+  const schedule = parseActivitySchedule(activity);
+  if (!schedule) return true;
+
+  const now = Date.now();
+  if (now < schedule.checkInStartAt.getTime()) {
+    response.status(400).json({
+      message: '签到未开始，请在活动开始后再签到',
+      timeline: buildActivityTimeline(activity),
+    });
+    return false;
+  }
+
+  if (now > schedule.checkInEndAt.getTime()) {
+    response.status(400).json({
+      message: '活动已结束，无法签到',
+      timeline: buildActivityTimeline(activity),
+    });
+    return false;
+  }
+
+  return true;
+}
+
+function serializeActivity(activity, options = {}) {
   if (!activity) return null;
   const plain = typeof activity.toObject === 'function' ? activity.toObject() : activity;
   return {
     ...plain,
+    ...buildActivityTimeline(plain, options.checkedIn === true),
     id: String(plain._id || plain.id || ''),
     createdBy: publicUser(plain.createdBy),
     createdAt: plain.createdAt instanceof Date
@@ -78,7 +216,7 @@ function serializeCheckIn(checkIn) {
   return {
     ...plain,
     id: String(plain._id || plain.id || ''),
-    activity: serializeActivity(plain.activity),
+    activity: serializeActivity(plain.activity, { checkedIn: true }),
     enrollment: plain.enrollment
       ? String(plain.enrollment._id || plain.enrollment.id || plain.enrollment)
       : '',
@@ -153,7 +291,7 @@ router.get('/feed', async (_request, response, next) => {
     ]);
 
     const realActivities = activities
-      .map(serializeActivity)
+      .map((activity) => serializeActivity(activity))
       .filter((activity) => activity && activity.id);
 
     response.json({
@@ -171,17 +309,26 @@ router.get('/feed', async (_request, response, next) => {
 
 router.get('/me/activities', requireAuth, async (request, response, next) => {
   try {
-    const enrollments = await Enrollment.find({
-      user: request.user._id,
-      status: 'registered',
-    })
-      .populate({ path: 'activity', populate: { path: 'createdBy' } })
-      .sort({ createdAt: -1 })
-      .lean();
+    const [enrollments, checkIns] = await Promise.all([
+      Enrollment.find({
+        user: request.user._id,
+        status: 'registered',
+      })
+        .populate({ path: 'activity', populate: { path: 'createdBy' } })
+        .sort({ createdAt: -1 })
+        .lean(),
+      CheckIn.find({ user: request.user._id }).select('activity').lean(),
+    ]);
+
+    const checkedActivityIds = new Set(
+      checkIns.map((item) => String(item.activity?._id || item.activity || ''))
+    );
 
     response.json({
       activities: enrollments
-        .map((enrollment) => serializeActivity(enrollment.activity))
+        .map((enrollment) => serializeActivity(enrollment.activity, {
+          checkedIn: checkedActivityIds.has(String(enrollment.activity?._id || '')),
+        }))
         .filter(Boolean),
     });
   } catch (error) {
@@ -205,6 +352,10 @@ router.get('/me/checkins', requireAuth, async (request, response, next) => {
   }
 });
 
+router.delete('/activities/:id/join', requireAuth, async (_request, response) => {
+  response.status(409).json({ message: '报名成功后不可取消，请按时参加活动并完成签到' });
+});
+
 router.post('/activities/:id/checkins', requireAuth, async (request, response, next) => {
   try {
     const activity = await findActivityByAnyId(request.params.id);
@@ -224,18 +375,20 @@ router.post('/activities/:id/checkins', requireAuth, async (request, response, n
       return;
     }
 
-    const code = String(request.body.code || '').trim();
-    const expectedCode = String(activity.checkInCode || '').trim();
-    if (expectedCode && code.toUpperCase() !== expectedCode.toUpperCase()) {
-      response.status(400).json({ message: '签到口令错误，请重新输入' });
-      return;
-    }
-
     let created = false;
     let checkIn = await CheckIn.findOne({
       activity: activity._id,
       user: request.user._id,
     });
+
+    if (!checkIn && !assertCheckInWindow(activity, response)) return;
+
+    const code = String(request.body.code || '').trim();
+    const expectedCode = String(activity.checkInCode || '').trim();
+    if (!checkIn && expectedCode && code.toUpperCase() !== expectedCode.toUpperCase()) {
+      response.status(400).json({ message: '签到口令错误，请重新输入' });
+      return;
+    }
 
     if (!checkIn) {
       checkIn = await CheckIn.create({
