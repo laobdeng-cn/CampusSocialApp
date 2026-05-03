@@ -726,44 +726,621 @@ class ActivityCalendarScreen extends StatelessWidget {
   }
 }
 
-class ActivityCheckInScreen extends StatelessWidget {
+class ActivityCheckInScreen extends StatefulWidget {
   const ActivityCheckInScreen({super.key, this.initialActivity});
 
   final CampusActivity? initialActivity;
 
   @override
+  State<ActivityCheckInScreen> createState() => _ActivityCheckInScreenState();
+}
+
+class _ActivityCheckInScreenState extends State<ActivityCheckInScreen> {
+  late Future<List<CampusActivity>> _activitiesFuture;
+  late Future<List<CampusCheckInRecord>> _recordsFuture;
+  CampusActivity? _selectedActivity;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetFutures();
+  }
+
+  void _resetFutures() {
+    _activitiesFuture = CampusRepository.instance.fetchMyActivities();
+    _recordsFuture = CampusRepository.instance.fetchCheckInRecords();
+  }
+
+  Future<void> _refresh() async {
+    setState(_resetFutures);
+    try {
+      await Future.wait<Object>([_activitiesFuture, _recordsFuture]);
+    } catch (_) {}
+  }
+
+  CampusActivity? _resolveSelectedActivity(List<CampusActivity> activities) {
+    if (activities.isEmpty) return null;
+
+    CampusActivity? findMatched(CampusActivity? target) {
+      if (target == null) return null;
+      for (final activity in activities) {
+        if ((target.id.isNotEmpty && activity.id == target.id) ||
+            activity.title == target.title) {
+          return activity;
+        }
+      }
+      return null;
+    }
+
+    final selected = findMatched(_selectedActivity);
+    if (selected != null) return selected;
+
+    final initial = findMatched(widget.initialActivity);
+    if (initial != null) return initial;
+
+    for (final activity in activities) {
+      if (activity.isCheckInAvailable) return activity;
+    }
+    for (final activity in activities) {
+      if (activity.isCheckInNotStarted) return activity;
+    }
+    for (final activity in activities) {
+      if (!activity.isEnded) return activity;
+    }
+    return activities.first;
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '活动签到',
-      actions: const [
-        Icon(Icons.event_available_outlined, size: 29),
-        SizedBox(width: 18),
+      actions: [
+        IconButton(
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 28),
+        ),
+        const SizedBox(width: 8),
       ],
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+      child: FutureBuilder<List<CampusActivity>>(
+        future: _activitiesFuture,
+        builder: (context, snapshot) {
+          final activities = snapshot.data ?? const <CampusActivity>[];
+          final selectedActivity = _resolveSelectedActivity(activities);
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
+              activities.isEmpty;
+          final hasError = snapshot.hasError && activities.isEmpty;
+
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
+              children: [
+                _CheckInPageOverview(
+                  activity: selectedActivity,
+                  registeredCount: activities.length,
+                  isLoading: isLoading,
+                ),
+                const SizedBox(height: 14),
+                if (isLoading)
+                  const _CheckInPageStateCard(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在同步报名活动',
+                    subtitle: '正在读取你已报名的活动和签到状态',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _CheckInPageStateCard(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (activities.isEmpty)
+                  const _CheckInPageStateCard(
+                    icon: Icons.event_busy_rounded,
+                    title: '暂无可签到活动',
+                    subtitle: '请先报名活动，报名成功后会在这里显示签到入口。',
+                  )
+                else ...[
+                  _CheckInActivitySelector(
+                    activities: activities,
+                    selected: selectedActivity,
+                    onSelected: (activity) {
+                      setState(() => _selectedActivity = activity);
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                  _PasswordCheckInCard(activity: selectedActivity),
+                ],
+                const SizedBox(height: 14),
+                const _CheckInRulesCard(),
+                const SizedBox(height: 22),
+                _SectionHeader(
+                  title: '我的签到记录',
+                  action: '全部记录',
+                  onActionTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CheckInRecordsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 10),
+                FutureBuilder<List<CampusCheckInRecord>>(
+                  future: _recordsFuture,
+                  builder: (context, recordSnapshot) {
+                    final records =
+                        recordSnapshot.data ?? const <CampusCheckInRecord>[];
+                    if (recordSnapshot.connectionState ==
+                            ConnectionState.waiting &&
+                        records.isEmpty) {
+                      return const CampusCard(
+                        padding: EdgeInsets.all(22),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.blue,
+                          ),
+                        ),
+                      );
+                    }
+                    if (records.isEmpty) {
+                      return const _CheckInPageStateCard(
+                        icon: Icons.fact_check_outlined,
+                        title: '暂无签到记录',
+                        subtitle: '完成签到后，记录会自动显示在这里。',
+                      );
+                    }
+                    return _RealCheckInRecordPreview(records: records);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CheckInPageOverview extends StatelessWidget {
+  const _CheckInPageOverview({
+    required this.activity,
+    required this.registeredCount,
+    required this.isLoading,
+  });
+
+  final CampusActivity? activity;
+  final int registeredCount;
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = activity == null ? '活动签到' : activity!.title;
+    final subtitle = activity == null
+        ? (isLoading ? '正在同步报名活动' : '报名后即可在这里完成签到')
+        : _checkInStatusDescription(activity!);
+    final color = activity == null
+        ? AppColors.blue
+        : _checkInStatusColor(activity!);
+
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      child: Row(
         children: [
-          const _CheckInHeroCard(),
-          const SizedBox(height: 14),
-          _PasswordCheckInCard(activity: initialActivity),
-          const SizedBox(height: 14),
-          const _CheckInRulesCard(),
-          const SizedBox(height: 22),
-          _SectionHeader(
-            title: '我的签到记录',
-            action: '全部记录',
-            onActionTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CheckInRecordsScreen()),
-              );
-            },
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              activity == null
+                  ? Icons.qr_code_scanner_rounded
+                  : _checkInStatusIcon(activity!),
+              color: color,
+              size: 30,
+            ),
           ),
-          const SizedBox(height: 10),
-          const _CheckInRecordList(),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppColors.text,
+                    fontSize: 14,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '$registeredCount',
+                style: const TextStyle(
+                  color: AppColors.blue,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Text(
+                '已报名',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
+}
+
+class _CheckInPageStateCard extends StatelessWidget {
+  const _CheckInPageStateCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(18, 28, 18, 28),
+      child: Column(
+        children: [
+          if (showLoading)
+            const CircularProgressIndicator(color: AppColors.blue)
+          else
+            Icon(icon, color: AppColors.blue, size: 46),
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckInActivitySelector extends StatelessWidget {
+  const _CheckInActivitySelector({
+    required this.activities,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<CampusActivity> activities;
+  final CampusActivity? selected;
+  final ValueChanged<CampusActivity> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '选择签到活动',
+            style: TextStyle(
+              color: AppColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final activity in activities)
+            _CheckInActivityOption(
+              activity: activity,
+              selected:
+                  selected != null &&
+                  ((selected!.id.isNotEmpty && selected!.id == activity.id) ||
+                      selected!.title == activity.title),
+              onTap: () => onSelected(activity),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckInActivityOption extends StatelessWidget {
+  const _CheckInActivityOption({
+    required this.activity,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final CampusActivity activity;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _checkInStatusColor(activity);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: selected ? color.withOpacity(0.08) : const Color(0xFFF8FAFD),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: selected ? color : const Color(0xFFE5EAF2),
+                width: selected ? 1.4 : 1,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                SmartImage(
+                  url: activity.posterUrl,
+                  width: 68,
+                  height: 58,
+                  borderRadius: 13,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        activity.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${activity.date} · ${activity.time}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _checkInStatusDescription(activity),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _CheckInStatusPill(activity: activity),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CheckInStatusPill extends StatelessWidget {
+  const _CheckInStatusPill({required this.activity});
+
+  final CampusActivity activity;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _checkInStatusColor(activity);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _checkInStatusLabel(activity),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _RealCheckInRecordPreview extends StatelessWidget {
+  const _RealCheckInRecordPreview({required this.records});
+
+  final List<CampusCheckInRecord> records;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewRecords = records.take(3).toList(growable: false);
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+      child: Column(
+        children: [
+          for (var index = 0; index < previewRecords.length; index++) ...[
+            _RealCheckInRecordTile(record: previewRecords[index]),
+            if (index != previewRecords.length - 1)
+              const Divider(height: 1, color: Color(0xFFE5EAF2)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RealCheckInRecordTile extends StatelessWidget {
+  const _RealCheckInRecordTile({required this.record});
+
+  final CampusCheckInRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        children: [
+          SmartImage(
+            url: record.activity.posterUrl,
+            width: 52,
+            height: 52,
+            borderRadius: 15,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record.activity.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '签到时间：${_friendlyFeatureTime(record.checkedAt)}',
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          const _RealStatusBadge(label: '已签到', color: AppColors.green),
+        ],
+      ),
+    );
+  }
+}
+
+class _RealStatusBadge extends StatelessWidget {
+  const _RealStatusBadge({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+String _checkInStatusLabel(CampusActivity activity) {
+  if (activity.isCheckedIn) return '已签到';
+  if (activity.isEnded) return '已结束';
+  if (activity.isCheckInAvailable) return '可签到';
+  if (activity.isCheckInNotStarted) return '未开始';
+  if (activity.statusText.isNotEmpty) return activity.statusText;
+  return '已报名';
+}
+
+String _checkInStatusDescription(CampusActivity activity) {
+  if (activity.countdownText.isNotEmpty) return activity.countdownText;
+  if (activity.isCheckedIn) return '你已完成该活动签到';
+  if (activity.isEnded) return '活动已结束，无法继续签到';
+  if (activity.isCheckInAvailable) return '当前活动可以签到，请输入现场口令';
+  if (activity.isCheckInNotStarted) return '签到未开始，请在活动开始后再来';
+  if (activity.statusText.isNotEmpty) return activity.statusText;
+  return '你已报名该活动，请等待签到开放';
+}
+
+Color _checkInStatusColor(CampusActivity activity) {
+  if (activity.isCheckedIn) return AppColors.green;
+  if (activity.isEnded) return AppColors.muted;
+  if (activity.isCheckInAvailable) return AppColors.blue;
+  if (activity.isCheckInNotStarted) return AppColors.orange;
+  return AppColors.blue;
+}
+
+IconData _checkInStatusIcon(CampusActivity activity) {
+  if (activity.isCheckedIn) return Icons.verified_rounded;
+  if (activity.isEnded) return Icons.event_busy_rounded;
+  if (activity.isCheckInAvailable) return Icons.qr_code_scanner_rounded;
+  if (activity.isCheckInNotStarted) return Icons.schedule_rounded;
+  return Icons.event_available_rounded;
 }
 
 class CheckInRecordsScreen extends StatefulWidget {
