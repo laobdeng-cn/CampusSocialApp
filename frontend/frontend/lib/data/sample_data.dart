@@ -50,6 +50,7 @@ const xiaochen = CampusUser(
 const campusUsers = [xiaobei, kexin, zihao, siyu, xiaochen];
 
 const campusActivity = CampusActivity(
+  id: 'campus_music_night',
   title: '校园音乐之夜',
   category: '文艺演出',
   posterUrl: 'asset:assets/images/activity_music_thumb.png',
@@ -66,6 +67,7 @@ const campusActivity = CampusActivity(
 );
 
 const volunteerActivity = CampusActivity(
+  id: 'photo_club_walk',
   title: '摄影社团采风活动',
   category: '社团活动',
   posterUrl: 'asset:assets/images/activity_photo_thumb.png',
@@ -82,6 +84,7 @@ const volunteerActivity = CampusActivity(
 );
 
 const aiTalkActivity = CampusActivity(
+  id: 'ai_future_talk',
   title: 'AI 未来发展趋势讲座',
   category: '科技讲座',
   posterUrl: 'asset:assets/images/activity_ai_thumb.png',
@@ -98,6 +101,7 @@ const aiTalkActivity = CampusActivity(
 );
 
 const basketballActivity = CampusActivity(
+  id: 'campus_basketball_match',
   title: '校园篮球友谊赛',
   category: '体育',
   posterUrl: 'asset:assets/images/activity_basketball_thumb.png',
