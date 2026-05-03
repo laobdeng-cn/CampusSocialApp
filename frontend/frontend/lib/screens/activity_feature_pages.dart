@@ -489,7 +489,10 @@ class MyRegisteredActivitiesScreen extends StatefulWidget {
 
 class _MyRegisteredActivitiesScreenState
     extends State<MyRegisteredActivitiesScreen> {
+  static const _tabs = ['全部', '待签到', '已签到', '已结束'];
+
   late Future<List<CampusActivity>> _activitiesFuture;
+  var _selectedTab = '全部';
 
   @override
   void initState() {
@@ -497,59 +500,600 @@ class _MyRegisteredActivitiesScreenState
     _activitiesFuture = CampusRepository.instance.fetchMyActivities();
   }
 
+  Future<void> _refresh() async {
+    final future = CampusRepository.instance.fetchMyActivities();
+    setState(() => _activitiesFuture = future);
+    await future;
+  }
+
+  List<CampusActivity> _filteredActivities(List<CampusActivity> source) {
+    switch (_selectedTab) {
+      case '待签到':
+        return source
+            .where((activity) {
+              return activity.isCheckInAvailable ||
+                  activity.isCheckInNotStarted ||
+                  (!activity.isCheckedIn && !activity.isEnded);
+            })
+            .toList(growable: false);
+      case '已签到':
+        return source
+            .where((activity) => activity.isCheckedIn)
+            .toList(growable: false);
+      case '已结束':
+        return source
+            .where((activity) => activity.isEnded)
+            .toList(growable: false);
+      case '全部':
+      default:
+        return source;
+    }
+  }
+
+  String _countForTab(String tab, List<CampusActivity> source) {
+    if (tab == '全部') return '${source.length}';
+    return '${_filteredByTab(tab, source).length}';
+  }
+
+  List<CampusActivity> _filteredByTab(String tab, List<CampusActivity> source) {
+    final old = _selectedTab;
+    _selectedTab = tab;
+    final result = _filteredActivities(source);
+    _selectedTab = old;
+    return result;
+  }
+
+  Future<void> _handleActivityAction(CampusActivity activity) async {
+    if (activity.isCheckInAvailable) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActivityCheckInScreen(initialActivity: activity),
+        ),
+      );
+      if (mounted) await _refresh();
+      return;
+    }
+
+    if (activity.isCheckedIn) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const CheckInRecordsScreen()),
+      );
+      if (mounted) await _refresh();
+      return;
+    }
+
+    if (activity.isEnded) {
+      _showFeatureMessage(context, '活动回顾功能后续接入');
+      return;
+    }
+
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: activity,
+          initialRegistered: true,
+        ),
+      ),
+    );
+
+    if (mounted && changed == true) {
+      await _refresh();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '我报名的',
-      actions: const [
-        Icon(Icons.filter_alt_outlined, size: 29),
-        SizedBox(width: 18),
+      actions: [
+        IconButton(
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 28),
+        ),
+        const SizedBox(width: 8),
       ],
       child: FutureBuilder<List<CampusActivity>>(
         future: _activitiesFuture,
         builder: (context, snapshot) {
-          final remoteItems = (snapshot.data ?? const <CampusActivity>[])
-              .map(_ActivityItem.fromActivity)
-              .toList(growable: false);
-          final items = remoteItems.isNotEmpty
-              ? remoteItems
-              : [_activityItems[0], _activityItems[1], _activityItems[3]];
+          final source = snapshot.data ?? const <CampusActivity>[];
+          final items = _filteredActivities(source);
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
+              source.isEmpty;
+          final hasError = snapshot.hasError && source.isEmpty;
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              const _FilterBar(labels: ['全部', '进行中', '待开始', '已结束']),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-                child: Text(
-                  snapshot.connectionState == ConnectionState.waiting
-                      ? '正在同步报名活动'
-                      : '共 ${items.length} 个报名活动',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 15),
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _RegisteredOverviewCard(
+                  total: source.length,
+                  waiting: _filteredByTab('待签到', source).length,
+                  checkedIn: _filteredByTab('已签到', source).length,
+                  ended: _filteredByTab('已结束', source).length,
+                ),
+                const SizedBox(height: 12),
+                _RegisteredStatusFilterBar(
+                  tabs: _tabs,
+                  selected: _selectedTab,
+                  counts: {
+                    for (final tab in _tabs) tab: _countForTab(tab, source),
+                  },
+                  onSelected: (tab) {
+                    setState(() => _selectedTab = tab);
+                  },
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                  child: Text(
+                    isLoading
+                        ? '正在同步报名活动'
+                        : '$_selectedTab · 共 ${items.length} 个活动',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (isLoading)
+                  const _RegisteredStateCard(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在加载报名活动',
+                    subtitle: '正在从后端同步你的报名状态',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _RegisteredStateCard(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (source.isEmpty)
+                  const _RegisteredStateCard(
+                    icon: Icons.event_busy_rounded,
+                    title: '暂无报名活动',
+                    subtitle: '去活动页报名后，这里会展示你的活动状态。',
+                  )
+                else if (items.isEmpty)
+                  _RegisteredStateCard(
+                    icon: Icons.filter_alt_off_rounded,
+                    title: '暂无$_selectedTab活动',
+                    subtitle: '切换其他状态看看，或者下拉刷新。',
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Column(
+                      children: [
+                        for (var index = 0; index < items.length; index++) ...[
+                          _RegisteredActivityCard(
+                            activity: items[index],
+                            onAction: () => _handleActivityAction(items[index]),
+                          ),
+                          if (index != items.length - 1)
+                            const SizedBox(height: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 22),
+                const Center(
+                  child: Text(
+                    '没有更多了',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RegisteredOverviewCard extends StatelessWidget {
+  const _RegisteredOverviewCard({
+    required this.total,
+    required this.waiting,
+    required this.checkedIn,
+    required this.ended,
+  });
+
+  final int total;
+  final int waiting;
+  final int checkedIn;
+  final int ended;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Row(
+          children: [
+            _RegisteredOverviewItem(
+              value: total,
+              label: '全部',
+              color: AppColors.blue,
+              icon: Icons.event_available_rounded,
+            ),
+            _RegisteredOverviewItem(
+              value: waiting,
+              label: '待签到',
+              color: AppColors.orange,
+              icon: Icons.schedule_rounded,
+            ),
+            _RegisteredOverviewItem(
+              value: checkedIn,
+              label: '已签到',
+              color: AppColors.green,
+              icon: Icons.verified_rounded,
+            ),
+            _RegisteredOverviewItem(
+              value: ended,
+              label: '已结束',
+              color: AppColors.muted,
+              icon: Icons.event_busy_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RegisteredOverviewItem extends StatelessWidget {
+  const _RegisteredOverviewItem({
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final int value;
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: color, size: 23),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RegisteredStatusFilterBar extends StatelessWidget {
+  const _RegisteredStatusFilterBar({
+    required this.tabs,
+    required this.selected,
+    required this.counts,
+    required this.onSelected,
+  });
+
+  final List<String> tabs;
+  final String selected;
+  final Map<String, String> counts;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(14, 12, 0, 2),
+      child: SizedBox(
+        height: 42,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: tabs.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final tab = tabs[index];
+            final active = tab == selected;
+            return GestureDetector(
+              onTap: () => onSelected(tab),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 15),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.blue : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: active ? AppColors.blue : const Color(0xFFE5EAF2),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$tab ${counts[tab] ?? '0'}',
+                    style: TextStyle(
+                      color: active ? Colors.white : AppColors.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RegisteredStateCard extends StatelessWidget {
+  const _RegisteredStateCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(18, 30, 18, 30),
+        child: Column(
+          children: [
+            if (showLoading)
+              const CircularProgressIndicator(color: AppColors.blue)
+            else
+              Icon(icon, color: AppColors.blue, size: 48),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RegisteredActivityCard extends StatelessWidget {
+  const _RegisteredActivityCard({
+    required this.activity,
+    required this.onAction,
+  });
+
+  final CampusActivity activity;
+  final VoidCallback onAction;
+
+  String get _actionLabel {
+    if (activity.isCheckInAvailable) return '去签到';
+    if (activity.isCheckedIn) return '查看记录';
+    if (activity.isEnded) return '活动回顾';
+    return '查看详情';
+  }
+
+  Color get _actionColor {
+    if (activity.isCheckInAvailable) return AppColors.blue;
+    if (activity.isCheckedIn) return AppColors.green;
+    if (activity.isEnded) return AppColors.muted;
+    return AppColors.orange;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _checkInStatusColor(activity);
+    final progress = activity.capacity <= 0
+        ? 0.0
+        : (activity.enrolled / activity.capacity).clamp(0.0, 1.0);
+
+    return CampusCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SmartImage(
+                url: activity.posterUrl,
+                width: 98,
+                height: 86,
+                borderRadius: 16,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (var index = 0; index < items.length; index++) ...[
-                      _ActivitySummaryCard(
-                        item: items[index],
-                        actionLabel: remoteItems.isNotEmpty ? '已报名' : '待参加',
-                        actionOutlined: true,
+                    Row(
+                      children: [
+                        _RegisteredStatusPill(
+                          label: _checkInStatusLabel(activity),
+                          color: statusColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            activity.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      activity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
                       ),
-                      if (index != items.length - 1) const SizedBox(height: 12),
-                    ],
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      '${activity.date} · ${activity.time}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      activity.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 22),
-              const Center(
-                child: Text('没有更多了', style: TextStyle(color: AppColors.muted)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: const Color(0xFFEAF1FF),
+              color: statusColor,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _checkInStatusDescription(activity),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 14,
+                    height: 1.35,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 38,
+                child: FilledButton(
+                  onPressed: onAction,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _actionColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  child: Text(
+                    _actionLabel,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
               ),
             ],
-          );
-        },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RegisteredStatusPill extends StatelessWidget {
+  const _RegisteredStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
