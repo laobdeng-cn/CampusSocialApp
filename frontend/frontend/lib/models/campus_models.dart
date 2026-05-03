@@ -358,6 +358,14 @@ class CampusActivity {
     required this.description,
     required this.highlights,
     required this.guests,
+    this.activityStatus = '',
+    this.checkInStatus = '',
+    this.statusText = '',
+    this.countdownText = '',
+    this.startAt = '',
+    this.endAt = '',
+    this.checkInStartAt = '',
+    this.checkInEndAt = '',
   });
 
   final String id;
@@ -374,6 +382,27 @@ class CampusActivity {
   final String description;
   final List<String> highlights;
   final List<CampusUser> guests;
+
+  /// 后端活动状态机字段
+  /// registered / checkin_available / checked_in / ended
+  final String activityStatus;
+
+  /// not_started / available / checked_in / ended
+  final String checkInStatus;
+
+  final String statusText;
+  final String countdownText;
+  final String startAt;
+  final String endAt;
+  final String checkInStartAt;
+  final String checkInEndAt;
+
+  bool get isCheckInNotStarted => checkInStatus == 'not_started';
+  bool get isCheckInAvailable =>
+      checkInStatus == 'available' || activityStatus == 'checkin_available';
+  bool get isCheckedIn =>
+      checkInStatus == 'checked_in' || activityStatus == 'checked_in';
+  bool get isEnded => checkInStatus == 'ended' || activityStatus == 'ended';
 
   factory CampusActivity.fromJson(Map<String, dynamic> json) {
     final highlights = _readStringList(json, 'highlights');
@@ -402,6 +431,14 @@ class CampusActivity {
         json,
         'guests',
       ).map(CampusUser.fromJson).toList(growable: false),
+      activityStatus: _readString(json, 'activityStatus'),
+      checkInStatus: _readString(json, 'checkInStatus'),
+      statusText: _readString(json, 'statusText'),
+      countdownText: _readString(json, 'countdownText'),
+      startAt: _readString(json, 'startAt'),
+      endAt: _readString(json, 'endAt'),
+      checkInStartAt: _readString(json, 'checkInStartAt'),
+      checkInEndAt: _readString(json, 'checkInEndAt'),
     );
   }
 
@@ -414,6 +451,14 @@ class CampusActivity {
     int? enrolled,
     List<String>? highlights,
     List<CampusUser>? guests,
+    String? activityStatus,
+    String? checkInStatus,
+    String? statusText,
+    String? countdownText,
+    String? startAt,
+    String? endAt,
+    String? checkInStartAt,
+    String? checkInEndAt,
   }) {
     return CampusActivity(
       id: id ?? this.id,
@@ -430,6 +475,14 @@ class CampusActivity {
       description: description,
       highlights: highlights ?? this.highlights,
       guests: guests ?? this.guests,
+      activityStatus: activityStatus ?? this.activityStatus,
+      checkInStatus: checkInStatus ?? this.checkInStatus,
+      statusText: statusText ?? this.statusText,
+      countdownText: countdownText ?? this.countdownText,
+      startAt: startAt ?? this.startAt,
+      endAt: endAt ?? this.endAt,
+      checkInStartAt: checkInStartAt ?? this.checkInStartAt,
+      checkInEndAt: checkInEndAt ?? this.checkInEndAt,
     );
   }
 }

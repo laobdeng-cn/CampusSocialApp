@@ -75,7 +75,8 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
     var registeredIds = <String>{};
 
     try {
-      final registeredActivities = await CampusRepository.instance.fetchMyActivities();
+      final registeredActivities = await CampusRepository.instance
+          .fetchMyActivities();
       registeredIds = registeredActivities
           .map((activity) => activity.id)
           .where((id) => id.isNotEmpty)
@@ -102,9 +103,11 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
 
   List<_ActivityItem> _visibleItems(List<_ActivityItem> source) {
     final keyword = _keyword.trim().toLowerCase();
-    final filtered = source.where((item) {
-      return _matchesCategory(item) && _matchesKeyword(item, keyword);
-    }).toList(growable: true);
+    final filtered = source
+        .where((item) {
+          return _matchesCategory(item) && _matchesKeyword(item, keyword);
+        })
+        .toList(growable: true);
 
     switch (_selectedSort) {
       case '热门':
@@ -181,7 +184,8 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
         builder: (context, snapshot) {
           final source = snapshot.data ?? const <_ActivityItem>[];
           final items = _visibleItems(source);
-          final isLoading = snapshot.connectionState == ConnectionState.waiting &&
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
               source.isEmpty;
           final hasError = snapshot.hasError && source.isEmpty;
 
@@ -213,10 +217,11 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
                   child: Text(
-                    isLoading
-                        ? '正在加载活动列表'
-                        : '共找到 ${items.length} 个活动',
-                    style: const TextStyle(color: AppColors.muted, fontSize: 15),
+                    isLoading ? '正在加载活动列表' : '共找到 ${items.length} 个活动',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 15,
+                    ),
                   ),
                 ),
                 if (isLoading)
@@ -369,7 +374,9 @@ class _SelectableUnderlineTabs extends StatelessWidget {
                     Text(
                       label,
                       style: TextStyle(
-                        color: label == selected ? AppColors.blue : AppColors.muted,
+                        color: label == selected
+                            ? AppColors.blue
+                            : AppColors.muted,
                         fontSize: 15,
                         fontWeight: label == selected
                             ? FontWeight.w800
@@ -720,7 +727,9 @@ class ActivityCalendarScreen extends StatelessWidget {
 }
 
 class ActivityCheckInScreen extends StatelessWidget {
-  const ActivityCheckInScreen({super.key});
+  const ActivityCheckInScreen({super.key, this.initialActivity});
+
+  final CampusActivity? initialActivity;
 
   @override
   Widget build(BuildContext context) {
@@ -735,7 +744,7 @@ class ActivityCheckInScreen extends StatelessWidget {
         children: [
           const _CheckInHeroCard(),
           const SizedBox(height: 14),
-          const _PasswordCheckInCard(),
+          _PasswordCheckInCard(activity: initialActivity),
           const SizedBox(height: 14),
           const _CheckInRulesCard(),
           const SizedBox(height: 22),
@@ -2650,7 +2659,9 @@ class _BigOutlineButton extends StatelessWidget {
 }
 
 class _PasswordCheckInCard extends StatefulWidget {
-  const _PasswordCheckInCard();
+  const _PasswordCheckInCard({this.activity});
+
+  final CampusActivity? activity;
 
   @override
   State<_PasswordCheckInCard> createState() => _PasswordCheckInCardState();
@@ -2658,7 +2669,14 @@ class _PasswordCheckInCard extends StatefulWidget {
 
 class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
   final _codeController = TextEditingController();
+  late Future<CampusActivity?> _activityFuture;
   var _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _activityFuture = _loadTargetActivity();
+  }
 
   @override
   void dispose() {
@@ -2666,8 +2684,47 @@ class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<CampusActivity?> _loadTargetActivity() async {
+    if (widget.activity != null) return widget.activity;
+
+    final activities = await CampusRepository.instance.fetchMyActivities();
+    if (activities.isEmpty) return null;
+
+    for (final activity in activities) {
+      if (activity.isCheckInAvailable) return activity;
+    }
+    for (final activity in activities) {
+      if (!activity.isCheckedIn && !activity.isEnded) return activity;
+    }
+    return activities.first;
+  }
+
+  bool _canCheckIn(CampusActivity activity) => activity.isCheckInAvailable;
+
+  String _statusTitle(CampusActivity activity) {
+    if (activity.isCheckedIn) return '已签到';
+    if (activity.isEnded) return '活动已结束';
+    if (activity.isCheckInAvailable) return '可以签到';
+    if (activity.isCheckInNotStarted) return '签到未开始';
+    return activity.statusText.isEmpty ? '已报名' : activity.statusText;
+  }
+
+  String _statusSubtitle(CampusActivity activity) {
+    if (activity.countdownText.isNotEmpty) return activity.countdownText;
+    if (activity.isCheckedIn) return '你已完成该活动签到';
+    if (activity.isEnded) return '活动已结束，无法继续签到';
+    if (activity.isCheckInAvailable) return '请输入现场工作人员公布的签到口令';
+    if (activity.isCheckInNotStarted) return '请在活动开始后再进行签到';
+    return '请等待活动开始后进行签到';
+  }
+
+  Future<void> _submit(CampusActivity activity) async {
     if (_isSubmitting) return;
+    if (!_canCheckIn(activity)) {
+      _showFeatureMessage(context, _statusSubtitle(activity));
+      return;
+    }
+
     final code = _codeController.text.trim();
     if (code.isEmpty) {
       _showFeatureMessage(context, '请输入签到口令');
@@ -2677,10 +2734,15 @@ class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
     setState(() => _isSubmitting = true);
     try {
       final record = await CampusRepository.instance.checkInWithCode(
+        activity: activity,
         code: code,
       );
       if (!mounted) return;
+      _codeController.clear();
       _showFeatureMessage(context, '${record.activity.title} 签到成功');
+      setState(() {
+        _activityFuture = _loadTargetActivity();
+      });
     } catch (error) {
       if (mounted) _showFeatureMessage(context, _featureError(error));
     } finally {
@@ -2690,117 +2752,202 @@ class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
 
   @override
   Widget build(BuildContext context) {
-    return CampusCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PasswordCheckInIcon(),
-              SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return FutureBuilder<CampusActivity?>(
+      future: _activityFuture,
+      builder: (context, snapshot) {
+        final activity = snapshot.data;
+
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            activity == null) {
+          return const CampusCard(
+            padding: EdgeInsets.all(22),
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.blue),
+            ),
+          );
+        }
+
+        if (activity == null) {
+          return CampusCard(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Row(
                   children: [
-                    Text(
-                      '签到口令',
-                      style: TextStyle(
-                        color: AppColors.ink,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      '如无法扫码，可输入活动口令完成签到',
-                      style: TextStyle(
-                        color: AppColors.text,
-                        fontSize: 14,
-                        height: 1.4,
+                    _PasswordCheckInIcon(),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        '暂无可签到活动',
+                        style: TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
+                SizedBox(height: 10),
+                Text(
+                  '请先报名活动，报名成功后会在这里显示可签到的活动。',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 15,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final canCheckIn = _canCheckIn(activity);
+
+        return CampusCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: SizedBox(
-                  height: 46,
-                  child: TextField(
-                    controller: _codeController,
-                    onSubmitted: (_) => _submit(),
-                    textInputAction: TextInputAction.done,
-                    textCapitalization: TextCapitalization.characters,
-                    style: const TextStyle(
-                      color: AppColors.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _PasswordCheckInIcon(),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '签到口令',
+                          style: TextStyle(
+                            color: AppColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${activity.title} · ${_statusTitle(activity)}',
+                          style: TextStyle(
+                            color: canCheckIn
+                                ? AppColors.blue
+                                : AppColors.orange,
+                            fontSize: 14,
+                            height: 1.4,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _statusSubtitle(activity),
+                          style: const TextStyle(
+                            color: AppColors.text,
+                            fontSize: 14,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
                     ),
-                    decoration: InputDecoration(
-                      hintText: '请输入签到口令',
-                      hintStyle: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 15,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 0,
-                      ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFB8C2D1)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: AppColors.blue,
-                          width: 1.4,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: TextField(
+                        controller: _codeController,
+                        enabled: canCheckIn && !_isSubmitting,
+                        onSubmitted: (_) => _submit(activity),
+                        textInputAction: TextInputAction.done,
+                        textCapitalization: TextCapitalization.characters,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: canCheckIn
+                              ? '输入签到口令'
+                              : _statusTitle(activity),
+                          hintStyle: const TextStyle(color: AppColors.muted),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(13),
+                            borderSide: const BorderSide(color: AppColors.blue),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(13),
+                            borderSide: const BorderSide(color: AppColors.blue),
+                          ),
+                          disabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(13),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFE5EAF2),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(13),
+                            borderSide: const BorderSide(
+                              color: AppColors.blue,
+                              width: 1.5,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    height: 46,
+                    child: FilledButton(
+                      onPressed: canCheckIn && !_isSubmitting
+                          ? () => _submit(activity)
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: canCheckIn
+                            ? AppColors.blue
+                            : AppColors.muted,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Color(0xFFE5EAF2),
+                        disabledForegroundColor: AppColors.muted,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                      child: Text(
+                        _isSubmitting
+                            ? '签到中...'
+                            : canCheckIn
+                            ? '口令签到'
+                            : _statusTitle(activity),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              SizedBox(
-                width: 116,
-                height: 46,
-                child: FilledButton(
-                  onPressed: _submit,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.blue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(13),
-                    ),
-                    padding: EdgeInsets.zero,
-                  ),
-                  child: Text(
-                    _isSubmitting ? '签到中' : '口令签到',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
+              const SizedBox(height: 12),
+              Text(
+                canCheckIn
+                    ? '示例：MUSIC2026 · 口令由现场工作人员公布'
+                    : '当前状态：${_statusSubtitle(activity)}',
+                style: const TextStyle(color: AppColors.muted, fontSize: 13),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          const Text(
-            '示例： MUSIC2026  ·  口令由现场工作人员公布',
-            style: TextStyle(color: AppColors.muted, fontSize: 13),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -4419,7 +4566,6 @@ class _RecommendedCategory {
   final Color color;
 }
 
-
 class ActivityEnrollmentDetailScreen extends StatefulWidget {
   const ActivityEnrollmentDetailScreen({
     required this.activity,
@@ -4457,8 +4603,18 @@ class _ActivityEnrollmentDetailScreenState
     try {
       final myActivities = await CampusRepository.instance.fetchMyActivities();
       if (!mounted) return;
+      CampusActivity? matchedActivity;
+      for (final item in myActivities) {
+        if (item.id == _activity.id || item.title == _activity.title) {
+          matchedActivity = item;
+          break;
+        }
+      }
       setState(() {
-        _registered = myActivities.any((item) => item.id == _activity.id);
+        _registered = matchedActivity != null;
+        if (matchedActivity != null) {
+          _activity = matchedActivity;
+        }
       });
     } catch (_) {
       // 保留列表页传入的状态，避免未登录或网络错误时详情页不可用。
@@ -4469,11 +4625,86 @@ class _ActivityEnrollmentDetailScreenState
 
   bool get _isFull => _activity.enrolled >= _activity.capacity && !_registered;
 
+  bool get _isCheckInNotStarted => _activity.isCheckInNotStarted;
+  bool get _isCheckInAvailable => _activity.isCheckInAvailable;
+  bool get _isCheckedIn => _activity.isCheckedIn;
+  bool get _isEnded => _activity.isEnded;
+
+  String get _currentStatusText {
+    if (!_registered) return '';
+    if (_activity.statusText.isNotEmpty) return _activity.statusText;
+    if (_isCheckedIn) return '已签到';
+    if (_isEnded) return '活动已结束';
+    if (_isCheckInAvailable) return '可签到';
+    if (_isCheckInNotStarted) return '签到未开始';
+    return '已报名';
+  }
+
+  String get _actionButtonText {
+    if (_isSubmitting) return '处理中...';
+    if (!_registered) {
+      if (_isFull) return '名额已满';
+      return '立即报名';
+    }
+    if (_isCheckedIn) return '已签到';
+    if (_isEnded) return '活动已结束';
+    if (_isCheckInAvailable) return '去签到';
+    if (_isCheckInNotStarted) return '签到未开始';
+    return '已报名';
+  }
+
+  Color get _actionButtonColor {
+    if (!_registered) {
+      return _isFull ? AppColors.muted : AppColors.green;
+    }
+    if (_isCheckInAvailable) return AppColors.blue;
+    if (_isCheckedIn) return AppColors.green;
+    if (_isEnded) return AppColors.muted;
+    return AppColors.orange;
+  }
+
+  bool get _mainActionEnabled {
+    if (_isSubmitting || _isFull) return false;
+    if (!_registered) return true;
+    return _isCheckInAvailable;
+  }
+
+  Future<void> _handleMainAction() async {
+    if (!_registered) {
+      await _joinActivity();
+      return;
+    }
+    if (_isCheckInAvailable) {
+      await _goCheckIn();
+      return;
+    }
+    _showFeatureMessage(
+      context,
+      _activity.countdownText.isNotEmpty
+          ? _activity.countdownText
+          : _currentStatusText,
+    );
+  }
+
+  Future<void> _goCheckIn() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityCheckInScreen(initialActivity: _activity),
+      ),
+    );
+    if (mounted) {
+      await _loadRegistrationStatus();
+    }
+  }
+
   Future<void> _joinActivity() async {
     if (_isSubmitting || _isFull) return;
     setState(() => _isSubmitting = true);
     try {
-      final nextActivity = await CampusRepository.instance.joinActivity(_activity);
+      final nextActivity = await CampusRepository.instance.joinActivity(
+        _activity,
+      );
       if (!mounted) return;
       setState(() {
         _activity = nextActivity;
@@ -4481,50 +4712,6 @@ class _ActivityEnrollmentDetailScreenState
         _changed = true;
       });
       _showFeatureMessage(context, '报名成功，可在“我报名的”活动中查看');
-    } catch (error) {
-      if (mounted) _showFeatureMessage(context, _featureError(error));
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _cancelRegistration() async {
-    if (_isSubmitting) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('取消报名'),
-        content: Text('确定取消报名「${_activity.title}」吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('再想想'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('取消报名'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    setState(() => _isSubmitting = true);
-    try {
-      final nextActivity = await CampusRepository.instance.cancelActivityJoin(
-        _activity,
-      );
-      if (!mounted) return;
-      setState(() {
-        _activity = nextActivity;
-        _registered = false;
-        _changed = true;
-      });
-      _showFeatureMessage(context, '已取消报名');
     } catch (error) {
       if (mounted) _showFeatureMessage(context, _featureError(error));
     } finally {
@@ -4542,13 +4729,7 @@ class _ActivityEnrollmentDetailScreenState
     final ratio = _activity.capacity <= 0
         ? 0.0
         : (_activity.enrolled / _activity.capacity).clamp(0.0, 1.0);
-    final buttonText = _isSubmitting
-        ? '处理中...'
-        : _registered
-        ? '取消报名'
-        : _isFull
-        ? '名额已满'
-        : '立即报名';
+    final buttonText = _actionButtonText;
 
     return WillPopScope(
       onWillPop: _handleBack,
@@ -4648,7 +4829,11 @@ class _ActivityEnrollmentDetailScreenState
                   const SizedBox(height: 10),
                   Text(
                     _registered
-                        ? '你已报名该活动，可前往“我报名的”查看。'
+                        ? (_activity.countdownText.isNotEmpty
+                              ? '你已报名该活动，${_activity.countdownText}。'
+                              : _currentStatusText.isNotEmpty
+                              ? '当前状态：$_currentStatusText。'
+                              : '你已报名该活动，可前往“我报名的”查看。')
                         : _isFull
                         ? '当前活动名额已满，暂时无法继续报名。'
                         : '剩余 ${(_activity.capacity - _activity.enrolled).clamp(0, _activity.capacity)} 个名额，报名后可参与签到。',
@@ -4717,12 +4902,12 @@ class _ActivityEnrollmentDetailScreenState
             child: SizedBox(
               height: 52,
               child: FilledButton(
-                onPressed: _isSubmitting || _isFull
-                    ? null
-                    : (_registered ? _cancelRegistration : _joinActivity),
+                onPressed: _mainActionEnabled ? _handleMainAction : null,
                 style: FilledButton.styleFrom(
                   backgroundColor: _registered ? AppColors.red : AppColors.blue,
-                  disabledBackgroundColor: AppColors.muted.withValues(alpha: 0.25),
+                  disabledBackgroundColor: AppColors.muted.withValues(
+                    alpha: 0.25,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
