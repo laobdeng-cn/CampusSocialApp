@@ -1729,6 +1729,9 @@ class FavoriteActivitiesScreen extends StatefulWidget {
 
 class _FavoriteActivitiesScreenState extends State<FavoriteActivitiesScreen> {
   late Future<List<CampusFavoriteRecord>> _favoritesFuture;
+  var _selectedTab = '全部';
+
+  static const _tabs = ['全部', '未开始', '已签到', '已结束'];
 
   @override
   void initState() {
@@ -1736,61 +1739,598 @@ class _FavoriteActivitiesScreenState extends State<FavoriteActivitiesScreen> {
     _favoritesFuture = CampusRepository.instance.fetchFavorites();
   }
 
+  Future<void> _refresh() async {
+    final future = CampusRepository.instance.fetchFavorites();
+    setState(() => _favoritesFuture = future);
+    await future;
+  }
+
+  List<CampusFavoriteRecord> _activityFavorites(
+    List<CampusFavoriteRecord> source,
+  ) {
+    return source
+        .where(
+          (record) =>
+              record.kind == 'activity' && record.activity.id.isNotEmpty,
+        )
+        .toList(growable: false);
+  }
+
+  List<CampusFavoriteRecord> _filteredRecords(
+    List<CampusFavoriteRecord> source,
+  ) {
+    final activityRecords = _activityFavorites(source);
+    switch (_selectedTab) {
+      case '未开始':
+        return activityRecords
+            .where((record) {
+              final activity = record.activity;
+              return activity.isCheckInNotStarted ||
+                  (!activity.isCheckedIn && !activity.isEnded);
+            })
+            .toList(growable: false);
+      case '已签到':
+        return activityRecords
+            .where((record) => record.activity.isCheckedIn)
+            .toList(growable: false);
+      case '已结束':
+        return activityRecords
+            .where((record) => record.activity.isEnded)
+            .toList(growable: false);
+      case '全部':
+      default:
+        return activityRecords;
+    }
+  }
+
+  int _countForTab(String tab, List<CampusFavoriteRecord> source) {
+    final old = _selectedTab;
+    _selectedTab = tab;
+    final result = _filteredRecords(source).length;
+    _selectedTab = old;
+    return result;
+  }
+
+  Future<void> _openDetail(CampusActivity activity) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: activity,
+          initialRegistered:
+              activity.activityStatus.isNotEmpty ||
+              activity.isCheckInNotStarted ||
+              activity.isCheckInAvailable ||
+              activity.isCheckedIn ||
+              activity.isEnded,
+        ),
+      ),
+    );
+    if (mounted) await _refresh();
+  }
+
+  Future<void> _removeFavorite(CampusActivity activity) async {
+    try {
+      await CampusRepository.instance.toggleActivityFavorite(activity);
+      if (!mounted) return;
+      _showFeatureMessage(context, '已取消收藏');
+      await _refresh();
+    } catch (error) {
+      if (mounted) _showFeatureMessage(context, _featureError(error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '我的收藏',
-      showBottomTabs: true,
-      actions: const [
-        Text(
-          '编辑',
-          style: TextStyle(
-            color: AppColors.blue,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
+      actions: [
+        IconButton(
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 28),
         ),
-        SizedBox(width: 18),
+        const SizedBox(width: 8),
       ],
       child: FutureBuilder<List<CampusFavoriteRecord>>(
         future: _favoritesFuture,
         builder: (context, snapshot) {
-          final remoteItems = (snapshot.data ?? const <CampusFavoriteRecord>[])
-              .where((record) => record.kind == 'activity')
-              .map((record) => _ActivityItem.fromActivity(record.activity))
-              .toList(growable: false);
-          final items = remoteItems.isNotEmpty
-              ? remoteItems
-              : _activityItems.take(4).toList(growable: false);
+          final source = snapshot.data ?? const <CampusFavoriteRecord>[];
+          final activityRecords = _activityFavorites(source);
+          final records = _filteredRecords(source);
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
+              source.isEmpty;
+          final hasError = snapshot.hasError && source.isEmpty;
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 18),
-            children: [
-              const _FilterBar(labels: ['全部', '文艺', '讲座', '体育', '志愿']),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-                child: Text(
-                  snapshot.connectionState == ConnectionState.waiting
-                      ? '正在同步收藏活动'
-                      : '共收藏 ${remoteItems.isEmpty ? 12 : remoteItems.length} 个活动',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 15),
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _FavoriteOverviewCard(records: activityRecords),
+                const SizedBox(height: 12),
+                _FavoriteFilterBar(
+                  tabs: _tabs,
+                  selected: _selectedTab,
+                  counts: {
+                    for (final tab in _tabs) tab: _countForTab(tab, source),
+                  },
+                  onSelected: (tab) => setState(() => _selectedTab = tab),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                  child: Text(
+                    isLoading
+                        ? '正在同步收藏活动'
+                        : '$_selectedTab · 共 ${records.length} 个收藏活动',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (isLoading)
+                  const _FavoriteStateCard(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在加载收藏',
+                    subtitle: '正在从后端同步你的收藏活动',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _FavoriteStateCard(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (activityRecords.isEmpty)
+                  const _FavoriteStateCard(
+                    icon: Icons.star_border_rounded,
+                    title: '暂无收藏活动',
+                    subtitle: '在活动详情页点击收藏后，这里会展示你的收藏活动。',
+                  )
+                else if (records.isEmpty)
+                  _FavoriteStateCard(
+                    icon: Icons.filter_alt_off_rounded,
+                    title: '暂无$_selectedTab收藏',
+                    subtitle: '切换其他状态看看，或者下拉刷新。',
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < records.length;
+                          index++
+                        ) ...[
+                          _FavoriteActivityCard(
+                            record: records[index],
+                            onOpen: () => _openDetail(records[index].activity),
+                            onRemove: () =>
+                                _removeFavorite(records[index].activity),
+                          ),
+                          if (index != records.length - 1)
+                            const SizedBox(height: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 22),
+                const Center(
+                  child: Text(
+                    '没有更多了',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FavoriteOverviewCard extends StatelessWidget {
+  const _FavoriteOverviewCard({required this.records});
+
+  final List<CampusFavoriteRecord> records;
+
+  int get _waitingCount {
+    return records.where((record) {
+      final activity = record.activity;
+      return activity.isCheckInNotStarted ||
+          (!activity.isCheckedIn && !activity.isEnded);
+    }).length;
+  }
+
+  int get _checkedInCount {
+    return records.where((record) => record.activity.isCheckedIn).length;
+  }
+
+  int get _endedCount {
+    return records.where((record) => record.activity.isEnded).length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Row(
+          children: [
+            _FavoriteOverviewItem(
+              value: records.length,
+              label: '全部',
+              color: AppColors.blue,
+              icon: Icons.star_rounded,
+            ),
+            _FavoriteOverviewItem(
+              value: _waitingCount,
+              label: '未开始',
+              color: AppColors.orange,
+              icon: Icons.schedule_rounded,
+            ),
+            _FavoriteOverviewItem(
+              value: _checkedInCount,
+              label: '已签到',
+              color: AppColors.green,
+              icon: Icons.verified_rounded,
+            ),
+            _FavoriteOverviewItem(
+              value: _endedCount,
+              label: '已结束',
+              color: AppColors.muted,
+              icon: Icons.event_busy_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteOverviewItem extends StatelessWidget {
+  const _FavoriteOverviewItem({
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final int value;
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: color, size: 23),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FavoriteFilterBar extends StatelessWidget {
+  const _FavoriteFilterBar({
+    required this.tabs,
+    required this.selected,
+    required this.counts,
+    required this.onSelected,
+  });
+
+  final List<String> tabs;
+  final String selected;
+  final Map<String, int> counts;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(14, 12, 0, 2),
+      child: SizedBox(
+        height: 42,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: tabs.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final tab = tabs[index];
+            final active = tab == selected;
+            return GestureDetector(
+              onTap: () => onSelected(tab),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 15),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.blue : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: active ? AppColors.blue : const Color(0xFFE5EAF2),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$tab ${counts[tab] ?? 0}',
+                    style: TextStyle(
+                      color: active ? Colors.white : AppColors.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteStateCard extends StatelessWidget {
+  const _FavoriteStateCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(18, 30, 18, 30),
+        child: Column(
+          children: [
+            if (showLoading)
+              const CircularProgressIndicator(color: AppColors.blue)
+            else
+              Icon(icon, color: AppColors.orange, size: 48),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FavoriteActivityCard extends StatelessWidget {
+  const _FavoriteActivityCard({
+    required this.record,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  final CampusFavoriteRecord record;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final activity = record.activity;
+    final statusColor = _checkInStatusColor(activity);
+    final progress = activity.capacity <= 0
+        ? 0.0
+        : (activity.enrolled / activity.capacity).clamp(0.0, 1.0);
+
+    return CampusCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SmartImage(
+                url: activity.posterUrl,
+                width: 98,
+                height: 86,
+                borderRadius: 16,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (final item in items)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _FavoriteActivityCard(item: item),
+                    Row(
+                      children: [
+                        _FavoriteStatusPill(
+                          label: _checkInStatusLabel(activity),
+                          color: statusColor,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            activity.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: onRemove,
+                          icon: const Icon(
+                            Icons.star_rounded,
+                            color: AppColors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      activity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
                       ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      '${activity.date} · ${activity.time}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      activity.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: const Color(0xFFEAF1FF),
+              color: statusColor,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _checkInStatusDescription(activity),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 14,
+                    height: 1.35,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                height: 38,
+                child: FilledButton(
+                  onPressed: onOpen,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  child: const Text(
+                    '查看详情',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FavoriteStatusPill extends StatelessWidget {
+  const _FavoriteStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -3774,23 +4314,6 @@ class _ParticipatedActivityCard extends StatelessWidget {
           footer,
         ],
       ),
-    );
-  }
-}
-
-class _FavoriteActivityCard extends StatelessWidget {
-  const _FavoriteActivityCard({required this.item});
-
-  final _ActivityItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return _ActivitySummaryCard(
-      item: item,
-      showFavorite: true,
-      collectDate: '收藏于 5月20日',
-      actionLabel: item.registered ? '查看详情' : '提醒我',
-      actionOutlined: !item.registered,
     );
   }
 }
