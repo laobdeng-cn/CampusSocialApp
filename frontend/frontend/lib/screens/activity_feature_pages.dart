@@ -1110,6 +1110,9 @@ class MyParticipatedActivitiesScreen extends StatefulWidget {
 class _MyParticipatedActivitiesScreenState
     extends State<MyParticipatedActivitiesScreen> {
   late Future<List<CampusCheckInRecord>> _recordsFuture;
+  var _selectedTab = '全部';
+
+  static const _tabs = ['全部', '本月', '文艺', '讲座', '体育'];
 
   @override
   void initState() {
@@ -1117,50 +1120,600 @@ class _MyParticipatedActivitiesScreenState
     _recordsFuture = CampusRepository.instance.fetchCheckInRecords();
   }
 
+  Future<void> _refresh() async {
+    final future = CampusRepository.instance.fetchCheckInRecords();
+    setState(() => _recordsFuture = future);
+    await future;
+  }
+
+  List<CampusCheckInRecord> _filteredRecords(List<CampusCheckInRecord> source) {
+    switch (_selectedTab) {
+      case '本月':
+        return source.where(_isThisMonth).toList(growable: false);
+      case '文艺':
+        return source
+            .where((record) {
+              final text =
+                  '${record.activity.category}${record.activity.title}';
+              return text.contains('文艺') ||
+                  text.contains('音乐') ||
+                  text.contains('演出');
+            })
+            .toList(growable: false);
+      case '讲座':
+        return source
+            .where((record) {
+              final text =
+                  '${record.activity.category}${record.activity.title}';
+              return text.contains('讲座') ||
+                  text.contains('科技') ||
+                  text.contains('AI');
+            })
+            .toList(growable: false);
+      case '体育':
+        return source
+            .where((record) {
+              final text =
+                  '${record.activity.category}${record.activity.title}';
+              return text.contains('体育') ||
+                  text.contains('篮球') ||
+                  text.contains('运动');
+            })
+            .toList(growable: false);
+      case '全部':
+      default:
+        return source;
+    }
+  }
+
+  bool _isThisMonth(CampusCheckInRecord record) {
+    final checkedAt = DateTime.tryParse(record.checkedAt);
+    if (checkedAt == null) return false;
+    final now = DateTime.now();
+    return checkedAt.year == now.year && checkedAt.month == now.month;
+  }
+
+  int _countForTab(String tab, List<CampusCheckInRecord> source) {
+    switch (tab) {
+      case '本月':
+        return source.where(_isThisMonth).length;
+      case '文艺':
+        return source.where((record) {
+          final text = '${record.activity.category}${record.activity.title}';
+          return text.contains('文艺') ||
+              text.contains('音乐') ||
+              text.contains('演出');
+        }).length;
+      case '讲座':
+        return source.where((record) {
+          final text = '${record.activity.category}${record.activity.title}';
+          return text.contains('讲座') ||
+              text.contains('科技') ||
+              text.contains('AI');
+        }).length;
+      case '体育':
+        return source.where((record) {
+          final text = '${record.activity.category}${record.activity.title}';
+          return text.contains('体育') ||
+              text.contains('篮球') ||
+              text.contains('运动');
+        }).length;
+      case '全部':
+      default:
+        return source.length;
+    }
+  }
+
+  Future<void> _openActivity(CampusCheckInRecord record) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: record.activity,
+          initialRegistered: true,
+        ),
+      ),
+    );
+    if (mounted) await _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '我参与的',
-      actions: const [Icon(Icons.tune_rounded, size: 29), SizedBox(width: 18)],
+      actions: [
+        IconButton(
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 28),
+        ),
+        const SizedBox(width: 8),
+      ],
       child: FutureBuilder<List<CampusCheckInRecord>>(
         future: _recordsFuture,
         builder: (context, snapshot) {
-          final remoteItems = (snapshot.data ?? const <CampusCheckInRecord>[])
-              .map((record) => _ActivityItem.fromActivity(record.activity))
-              .toList(growable: false);
-          final items = remoteItems.isNotEmpty
-              ? remoteItems
-              : [_activityItems[0], _activityItems[1], _activityItems[3]];
+          final source = snapshot.data ?? const <CampusCheckInRecord>[];
+          final records = _filteredRecords(source);
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
+              source.isEmpty;
+          final hasError = snapshot.hasError && source.isEmpty;
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _ParticipatedOverviewCard(records: source),
+                const SizedBox(height: 12),
+                _ParticipatedFilterBar(
+                  tabs: _tabs,
+                  selected: _selectedTab,
+                  counts: {
+                    for (final tab in _tabs) tab: _countForTab(tab, source),
+                  },
+                  onSelected: (tab) => setState(() => _selectedTab = tab),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+                  child: Text(
+                    isLoading
+                        ? '正在同步参与记录'
+                        : '$_selectedTab · 共 ${records.length} 条参与记录',
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (isLoading)
+                  const _ParticipatedStateCard(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在加载参与记录',
+                    subtitle: '正在从后端同步你的签到和参与记录',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _ParticipatedStateCard(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (source.isEmpty)
+                  const _ParticipatedStateCard(
+                    icon: Icons.emoji_events_outlined,
+                    title: '暂无参与记录',
+                    subtitle: '完成活动签到后，活动会自动进入“我参与的”。',
+                  )
+                else if (records.isEmpty)
+                  _ParticipatedStateCard(
+                    icon: Icons.filter_alt_off_rounded,
+                    title: '暂无$_selectedTab记录',
+                    subtitle: '切换其他分类看看，或者下拉刷新。',
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Column(
+                      children: [
+                        for (
+                          var index = 0;
+                          index < records.length;
+                          index++
+                        ) ...[
+                          _ParticipatedRecordCard(
+                            record: records[index],
+                            onTap: () => _openActivity(records[index]),
+                          ),
+                          if (index != records.length - 1)
+                            const SizedBox(height: 12),
+                        ],
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 22),
+                const Center(
+                  child: Text(
+                    '没有更多了',
+                    style: TextStyle(color: AppColors.muted),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ParticipatedOverviewCard extends StatelessWidget {
+  const _ParticipatedOverviewCard({required this.records});
+
+  final List<CampusCheckInRecord> records;
+
+  int get _thisMonthCount {
+    final now = DateTime.now();
+    return records.where((record) {
+      final checkedAt = DateTime.tryParse(record.checkedAt);
+      return checkedAt != null &&
+          checkedAt.year == now.year &&
+          checkedAt.month == now.month;
+    }).length;
+  }
+
+  int get _categoryCount {
+    return records
+        .map((record) => record.activity.category)
+        .where((item) => item.trim().isNotEmpty)
+        .toSet()
+        .length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        child: Row(
+          children: [
+            _ParticipatedOverviewItem(
+              value: records.length,
+              label: '总参与',
+              color: AppColors.blue,
+              icon: Icons.emoji_events_rounded,
+            ),
+            _ParticipatedOverviewItem(
+              value: _thisMonthCount,
+              label: '本月',
+              color: AppColors.orange,
+              icon: Icons.calendar_month_rounded,
+            ),
+            _ParticipatedOverviewItem(
+              value: _categoryCount,
+              label: '类型',
+              color: AppColors.green,
+              icon: Icons.category_rounded,
+            ),
+            const _ParticipatedOverviewItem(
+              value: 0,
+              label: '成长值',
+              color: Color(0xFF8B5CF6),
+              icon: Icons.auto_awesome_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ParticipatedOverviewItem extends StatelessWidget {
+  const _ParticipatedOverviewItem({
+    required this.value,
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final int value;
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: color, size: 23),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParticipatedFilterBar extends StatelessWidget {
+  const _ParticipatedFilterBar({
+    required this.tabs,
+    required this.selected,
+    required this.counts,
+    required this.onSelected,
+  });
+
+  final List<String> tabs;
+  final String selected;
+  final Map<String, int> counts;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(14, 12, 0, 2),
+      child: SizedBox(
+        height: 42,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: tabs.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final tab = tabs[index];
+            final active = tab == selected;
+            return GestureDetector(
+              onTap: () => onSelected(tab),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 15),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.blue : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: active ? AppColors.blue : const Color(0xFFE5EAF2),
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    '$tab ${counts[tab] ?? 0}',
+                    style: TextStyle(
+                      color: active ? Colors.white : AppColors.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ParticipatedStateCard extends StatelessWidget {
+  const _ParticipatedStateCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+      child: CampusCard(
+        padding: const EdgeInsets.fromLTRB(18, 30, 18, 30),
+        child: Column(
+          children: [
+            if (showLoading)
+              const CircularProgressIndicator(color: AppColors.blue)
+            else
+              Icon(icon, color: AppColors.blue, size: 48),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 14,
+                height: 1.45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ParticipatedRecordCard extends StatelessWidget {
+  const _ParticipatedRecordCard({required this.record, required this.onTap});
+
+  final CampusCheckInRecord record;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final activity = record.activity;
+    return CampusCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        children: [
+          Row(
             children: [
-              const _FilterBar(labels: ['全部', '已签到', '待评价', '已完成']),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+              SmartImage(
+                url: activity.posterUrl,
+                width: 98,
+                height: 86,
+                borderRadius: 16,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    for (var index = 0; index < items.length; index++) ...[
-                      _ParticipatedActivityCard(
-                        item: items[index],
-                        status: remoteItems.isNotEmpty ? '已签到' : '已完成',
-                        footer: index.isEven
-                            ? const _TwoActionFooter(
-                                leftIcon: Icons.image_outlined,
-                                leftLabel: '查看照片',
-                                rightIcon: Icons.article_outlined,
-                                rightLabel: '活动回顾',
-                              )
-                            : const _CertificateBanner(),
+                    Row(
+                      children: [
+                        const _ParticipatedStatusPill(
+                          label: '已参与',
+                          color: AppColors.green,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            activity.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      activity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
                       ),
-                      if (index != items.length - 1) const SizedBox(height: 12),
-                    ],
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      '${activity.date} · ${activity.time}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      activity.location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7FAFF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE5EAF2)),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.verified_rounded,
+                  color: AppColors.green,
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '签到时间：${_friendlyFeatureTime(record.checkedAt)}',
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: 36,
+                  child: FilledButton(
+                    onPressed: onTap,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    child: const Text(
+                      '查看详情',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParticipatedStatusPill extends StatelessWidget {
+  const _ParticipatedStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
