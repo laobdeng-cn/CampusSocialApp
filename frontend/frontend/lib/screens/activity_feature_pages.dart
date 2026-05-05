@@ -2336,27 +2336,904 @@ class _FavoriteStatusPill extends StatelessWidget {
   }
 }
 
-class ActivityCalendarScreen extends StatelessWidget {
+class ActivityCalendarScreen extends StatefulWidget {
   const ActivityCalendarScreen({super.key});
+
+  @override
+  State<ActivityCalendarScreen> createState() => _ActivityCalendarScreenState();
+}
+
+class _ActivityCalendarScreenState extends State<ActivityCalendarScreen> {
+  late Future<List<CampusActivity>> _activitiesFuture;
+  late DateTime _focusedMonth;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _focusedMonth = DateTime(now.year, now.month);
+    _selectedDate = _normalizeDate(now);
+    _activitiesFuture = _loadActivities();
+  }
+
+  Future<List<CampusActivity>> _loadActivities() async {
+    final activities = await CampusRepository.instance.fetchMyActivities();
+    return activities.toList(growable: false)..sort((left, right) {
+      final leftDate = _activityDate(left) ?? DateTime(2999);
+      final rightDate = _activityDate(right) ?? DateTime(2999);
+      return leftDate.compareTo(rightDate);
+    });
+  }
+
+  Future<void> _refresh() async {
+    final future = _loadActivities();
+    setState(() => _activitiesFuture = future);
+    await future;
+  }
+
+  static DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  DateTime? _activityDate(CampusActivity activity) {
+    final raw = activity.date.trim();
+    if (raw.isEmpty || raw == '时间待定') return null;
+
+    final now = DateTime.now();
+
+    final yearMonthDay = RegExp(
+      r'(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})',
+    ).firstMatch(raw);
+    if (yearMonthDay != null) {
+      final year = int.tryParse(yearMonthDay.group(1)!);
+      final month = int.tryParse(yearMonthDay.group(2)!);
+      final day = int.tryParse(yearMonthDay.group(3)!);
+      if (year != null && month != null && day != null) {
+        return DateTime(year, month, day);
+      }
+    }
+
+    final chineseMonthDay = RegExp(r'(\d{1,2})月(\d{1,2})日').firstMatch(raw);
+    if (chineseMonthDay != null) {
+      final month = int.tryParse(chineseMonthDay.group(1)!);
+      final day = int.tryParse(chineseMonthDay.group(2)!);
+      if (month != null && day != null) {
+        return DateTime(now.year, month, day);
+      }
+    }
+
+    final dotMonthDay = RegExp(r'(\d{1,2})\.(\d{1,2})').firstMatch(raw);
+    if (dotMonthDay != null) {
+      final month = int.tryParse(dotMonthDay.group(1)!);
+      final day = int.tryParse(dotMonthDay.group(2)!);
+      if (month != null && day != null) {
+        return DateTime(now.year, month, day);
+      }
+    }
+
+    return null;
+  }
+
+  Map<DateTime, List<CampusActivity>> _activitiesByDay(
+    List<CampusActivity> activities,
+  ) {
+    final map = <DateTime, List<CampusActivity>>{};
+
+    for (final activity in activities) {
+      final date = _activityDate(activity);
+      if (date == null) continue;
+
+      final key = _normalizeDate(date);
+      map.putIfAbsent(key, () => <CampusActivity>[]).add(activity);
+    }
+
+    return map;
+  }
+
+  List<DateTime> _calendarDaysForMonth(DateTime month) {
+    final firstDay = DateTime(month.year, month.month);
+    final firstWeekday = firstDay.weekday; // 1 = Monday, 7 = Sunday
+    final start = firstDay.subtract(Duration(days: firstWeekday - 1));
+
+    return List.generate(
+      42,
+      (index) => _normalizeDate(start.add(Duration(days: index))),
+    );
+  }
+
+  List<CampusActivity> _selectedDateActivities(
+    Map<DateTime, List<CampusActivity>> byDay,
+  ) {
+    return byDay[_normalizeDate(_selectedDate)] ?? const <CampusActivity>[];
+  }
+
+  int _monthActivityCount(Map<DateTime, List<CampusActivity>> byDay) {
+    var total = 0;
+    byDay.forEach((date, activities) {
+      if (date.year == _focusedMonth.year &&
+          date.month == _focusedMonth.month) {
+        total += activities.length;
+      }
+    });
+    return total;
+  }
+
+  int _waitingCount(List<CampusActivity> activities) {
+    return activities.where((activity) {
+      return activity.isCheckInNotStarted ||
+          activity.isCheckInAvailable ||
+          (!activity.isCheckedIn && !activity.isEnded);
+    }).length;
+  }
+
+  int _checkedCount(List<CampusActivity> activities) {
+    return activities.where((activity) => activity.isCheckedIn).length;
+  }
+
+  void _goPrevMonth() {
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+      _selectedDate = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    });
+  }
+
+  void _goNextMonth() {
+    setState(() {
+      _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+      _selectedDate = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    });
+  }
+
+  void _goToday() {
+    final now = DateTime.now();
+    setState(() {
+      _focusedMonth = DateTime(now.year, now.month);
+      _selectedDate = _normalizeDate(now);
+    });
+  }
+
+  Future<void> _openActivity(CampusActivity activity) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: activity,
+          initialRegistered: true,
+          initialFavorite: activity.isFavorited,
+        ),
+      ),
+    );
+
+    if (mounted && changed == true) {
+      await _refresh();
+    }
+  }
+
+  Future<void> _handleAction(CampusActivity activity) async {
+    if (activity.isCheckInAvailable) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActivityCheckInScreen(initialActivity: activity),
+        ),
+      );
+      if (mounted) await _refresh();
+      return;
+    }
+
+    await _openActivity(activity);
+  }
 
   @override
   Widget build(BuildContext context) {
     return _FeatureScaffold(
       title: '活动日历',
-      actions: const [
-        Icon(Icons.calendar_month_outlined, size: 29),
-        SizedBox(width: 18),
+      actions: [
+        TextButton(
+          onPressed: _goToday,
+          child: const Text(
+            '今天',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+        ),
+        IconButton(
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 27),
+        ),
+        const SizedBox(width: 8),
       ],
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 10, 14, 24),
-        children: const [
-          _CalendarPanel(),
-          SizedBox(height: 22),
-          _TodaySchedule(),
-          SizedBox(height: 22),
-          _WeekActivities(),
-          SizedBox(height: 14),
-          _CalendarLegend(),
+      child: FutureBuilder<List<CampusActivity>>(
+        future: _activitiesFuture,
+        builder: (context, snapshot) {
+          final activities = snapshot.data ?? const <CampusActivity>[];
+          final byDay = _activitiesByDay(activities);
+          final selectedActivities = _selectedDateActivities(byDay);
+          final isLoading =
+              snapshot.connectionState == ConnectionState.waiting &&
+              activities.isEmpty;
+          final hasError = snapshot.hasError && activities.isEmpty;
+
+          return RefreshIndicator(
+            color: AppColors.blue,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
+              children: [
+                if (isLoading) const LinearProgressIndicator(minHeight: 2),
+                _RealActivityCalendarOverview(
+                  total: activities.length,
+                  monthTotal: _monthActivityCount(byDay),
+                  waiting: _waitingCount(activities),
+                  checked: _checkedCount(activities),
+                ),
+                const SizedBox(height: 14),
+                _RealActivityCalendarPanel(
+                  focusedMonth: _focusedMonth,
+                  selectedDate: _selectedDate,
+                  days: _calendarDaysForMonth(_focusedMonth),
+                  activitiesByDay: byDay,
+                  onPrevMonth: _goPrevMonth,
+                  onNextMonth: _goNextMonth,
+                  onSelectDate: (date) {
+                    setState(() => _selectedDate = _normalizeDate(date));
+                  },
+                ),
+                const SizedBox(height: 14),
+                _RealSelectedDayHeader(
+                  selectedDate: _selectedDate,
+                  count: selectedActivities.length,
+                  rawDate: selectedActivities.isEmpty
+                      ? null
+                      : selectedActivities.first.date,
+                ),
+                const SizedBox(height: 10),
+                if (isLoading)
+                  const _RealCalendarStateCard(
+                    icon: Icons.hourglass_top_rounded,
+                    title: '正在同步活动日历',
+                    subtitle: '正在读取你已报名的真实活动',
+                    showLoading: true,
+                  )
+                else if (hasError)
+                  _RealCalendarStateCard(
+                    icon: Icons.wifi_off_rounded,
+                    title: '加载失败',
+                    subtitle: _featureError(snapshot.error!),
+                  )
+                else if (activities.isEmpty)
+                  const _RealCalendarStateCard(
+                    icon: Icons.event_busy_rounded,
+                    title: '暂无报名活动',
+                    subtitle: '你报名活动后，活动日期会自动标记到日历上。',
+                  )
+                else if (selectedActivities.isEmpty)
+                  const _RealCalendarStateCard(
+                    icon: Icons.calendar_today_rounded,
+                    title: '当天暂无活动',
+                    subtitle: '选择带有圆点标记的日期，可以查看当天活动安排。',
+                  )
+                else
+                  for (final activity in selectedActivities)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _RealCalendarActivityCard(
+                        activity: activity,
+                        onTap: () => _openActivity(activity),
+                        onAction: () => _handleAction(activity),
+                      ),
+                    ),
+                const SizedBox(height: 8),
+                const Center(
+                  child: Text(
+                    '没有更多了',
+                    style: TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RealActivityCalendarOverview extends StatelessWidget {
+  const _RealActivityCalendarOverview({
+    required this.total,
+    required this.monthTotal,
+    required this.waiting,
+    required this.checked,
+  });
+
+  final int total;
+  final int monthTotal;
+  final int waiting;
+  final int checked;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+      child: Row(
+        children: [
+          _RealCalendarOverviewItem(
+            icon: Icons.event_available_rounded,
+            value: total,
+            label: '全部',
+            color: AppColors.blue,
+          ),
+          _RealCalendarOverviewItem(
+            icon: Icons.calendar_month_rounded,
+            value: monthTotal,
+            label: '本月',
+            color: AppColors.purple,
+          ),
+          _RealCalendarOverviewItem(
+            icon: Icons.schedule_rounded,
+            value: waiting,
+            label: '待签到',
+            color: AppColors.orange,
+          ),
+          _RealCalendarOverviewItem(
+            icon: Icons.verified_rounded,
+            value: checked,
+            label: '已签到',
+            color: AppColors.green,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RealCalendarOverviewItem extends StatelessWidget {
+  const _RealCalendarOverviewItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final int value;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: Icon(icon, color: color, size: 23),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RealActivityCalendarPanel extends StatelessWidget {
+  const _RealActivityCalendarPanel({
+    required this.focusedMonth,
+    required this.selectedDate,
+    required this.days,
+    required this.activitiesByDay,
+    required this.onPrevMonth,
+    required this.onNextMonth,
+    required this.onSelectDate,
+  });
+
+  final DateTime focusedMonth;
+  final DateTime selectedDate;
+  final List<DateTime> days;
+  final Map<DateTime, List<CampusActivity>> activitiesByDay;
+  final VoidCallback onPrevMonth;
+  final VoidCallback onNextMonth;
+  final ValueChanged<DateTime> onSelectDate;
+
+  static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+  bool _sameDay(DateTime left, DateTime right) {
+    return left.year == right.year &&
+        left.month == right.month &&
+        left.day == right.day;
+  }
+
+  bool _sameMonth(DateTime left, DateTime right) {
+    return left.year == right.year && left.month == right.month;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateTime.now();
+
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: onPrevMonth,
+                icon: const Icon(Icons.chevron_left_rounded, size: 30),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    '${focusedMonth.year}年${focusedMonth.month}月',
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: onNextMonth,
+                icon: const Icon(Icons.chevron_right_rounded, size: 30),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final label in _weekdayLabels)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          GridView.builder(
+            itemCount: days.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 7,
+              crossAxisSpacing: 7,
+              childAspectRatio: 0.94,
+            ),
+            itemBuilder: (context, index) {
+              final day = days[index];
+              final key = DateTime(day.year, day.month, day.day);
+              final activities =
+                  activitiesByDay[key] ?? const <CampusActivity>[];
+              final active = _sameDay(day, selectedDate);
+              final current = _sameDay(day, today);
+              final inMonth = _sameMonth(day, focusedMonth);
+
+              return _RealCalendarDayCell(
+                day: day,
+                count: activities.length,
+                active: active,
+                current: current,
+                muted: !inMonth,
+                onTap: () => onSelectDate(day),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RealCalendarDayCell extends StatelessWidget {
+  const _RealCalendarDayCell({
+    required this.day,
+    required this.count,
+    required this.active,
+    required this.current,
+    required this.muted,
+    required this.onTap,
+  });
+
+  final DateTime day;
+  final int count;
+  final bool active;
+  final bool current;
+  final bool muted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = active
+        ? AppColors.blue
+        : current
+        ? AppColors.blue.withValues(alpha: 0.1)
+        : Colors.transparent;
+    final foreground = active
+        ? Colors.white
+        : muted
+        ? AppColors.muted.withValues(alpha: 0.45)
+        : AppColors.ink;
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: current && !active
+                  ? AppColors.blue.withValues(alpha: 0.35)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              if (count > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1,
+                  ),
+                  decoration: BoxDecoration(
+                    color: active
+                        ? Colors.white.withValues(alpha: 0.95)
+                        : AppColors.green.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      color: active ? AppColors.blue : AppColors.green,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: 4,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: active
+                        ? Colors.white.withValues(alpha: 0.65)
+                        : Colors.transparent,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RealSelectedDayHeader extends StatelessWidget {
+  const _RealSelectedDayHeader({
+    required this.selectedDate,
+    required this.count,
+    this.rawDate,
+  });
+
+  final DateTime selectedDate;
+  final int count;
+  final String? rawDate;
+
+  static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+
+  String get _label {
+    final raw = rawDate?.trim() ?? '';
+
+    // 优先使用后端/活动原始文案里的周几，例如：6月15日（周六）
+    final weekdayMatch = RegExp(r'周[一二三四五六日天]').firstMatch(raw);
+    if (weekdayMatch != null) {
+      final weekday = weekdayMatch.group(0)!.replaceAll('周天', '周日');
+      return '${selectedDate.month}月${selectedDate.day}日（$weekday）';
+    }
+
+    // 没有原始周几时，再用 DateTime 兜底计算
+    final weekday = _weekdays[selectedDate.weekday - 1];
+    return '${selectedDate.month}月${selectedDate.day}日（周$weekday）';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          _label,
+          style: const TextStyle(
+            color: AppColors.ink,
+            fontSize: 19,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const Spacer(),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: AppColors.blue.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count 个活动',
+            style: const TextStyle(
+              color: AppColors.blue,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RealCalendarActivityCard extends StatelessWidget {
+  const _RealCalendarActivityCard({
+    required this.activity,
+    required this.onTap,
+    required this.onAction,
+  });
+
+  final CampusActivity activity;
+  final VoidCallback onTap;
+  final VoidCallback onAction;
+
+  String get _buttonText {
+    if (activity.isCheckInAvailable) return '去签到';
+    if (activity.isCheckedIn) return '查看详情';
+    if (activity.isEnded) return '已结束';
+    return '查看详情';
+  }
+
+  Color get _buttonColor {
+    if (activity.isCheckInAvailable) return AppColors.blue;
+    if (activity.isCheckedIn) return AppColors.green;
+    if (activity.isEnded) return AppColors.muted;
+    return AppColors.orange;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = _checkInStatusColor(activity);
+
+    return CampusCard(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              SmartImage(
+                url: activity.posterUrl,
+                width: 92,
+                height: 82,
+                borderRadius: 16,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 94,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _RealCalendarStatusPill(
+                            label: _checkInStatusLabel(activity),
+                            color: statusColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              activity.category,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.muted,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        activity.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '${activity.time} · ${activity.location}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.text,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _checkInStatusDescription(activity),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                height: 36,
+                child: FilledButton(
+                  onPressed: activity.isEnded ? onTap : onAction,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _buttonColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  child: Text(
+                    _buttonText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RealCalendarStatusPill extends StatelessWidget {
+  const _RealCalendarStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _RealCalendarStateCard extends StatelessWidget {
+  const _RealCalendarStateCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.showLoading = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool showLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(20, 34, 20, 32),
+      child: Column(
+        children: [
+          if (showLoading)
+            const CircularProgressIndicator(color: AppColors.blue)
+          else
+            Container(
+              width: 74,
+              height: 74,
+              decoration: BoxDecoration(
+                color: AppColors.blue.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Icon(icon, color: AppColors.blue, size: 40),
+            ),
+          const SizedBox(height: 16),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
         ],
       ),
     );
