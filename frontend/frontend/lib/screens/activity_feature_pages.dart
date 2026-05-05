@@ -6997,6 +6997,34 @@ class _ActivityEnrollmentDetailScreenState
   }
 
   @override
+  Widget _buildFavoriteButton() {
+    return TextButton.icon(
+      onPressed: _isTogglingFavorite ? null : _toggleFavorite,
+      style: TextButton.styleFrom(
+        foregroundColor: _isFavorited ? AppColors.orange : AppColors.blue,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        minimumSize: const Size(0, 34),
+      ),
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 120),
+        transitionBuilder: (child, animation) {
+          return ScaleTransition(scale: animation, child: child);
+        },
+        child: Icon(
+          _isFavorited ? Icons.star_rounded : Icons.star_border_rounded,
+          key: ValueKey(_isFavorited),
+          color: _isFavorited ? AppColors.orange : AppColors.blue,
+          size: 22,
+        ),
+      ),
+      label: Text(
+        _isFavorited ? '已收藏' : '收藏',
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
   Widget build(BuildContext context) {
     final ratio = _activity.capacity <= 0
         ? 0.0
@@ -7023,28 +7051,7 @@ class _ActivityEnrollmentDetailScreenState
               width: double.infinity,
               borderRadius: 20,
             ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: _isTogglingFavorite ? null : _toggleFavorite,
-                icon: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 120),
-                  transitionBuilder: (child, animation) {
-                    return ScaleTransition(scale: animation, child: child);
-                  },
-                  child: Icon(
-                    _isFavorited
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    key: ValueKey(_isFavorited),
-                    color: _isFavorited ? AppColors.orange : AppColors.blue,
-                  ),
-                ),
-                label: Text(_isFavorited ? '已收藏' : '收藏'),
-              ),
-            ),
-            const SizedBox(height: 8),
+
             Row(
               children: [
                 Pill(label: _activity.category, color: AppColors.blue),
@@ -7063,9 +7070,18 @@ class _ActivityEnrollmentDetailScreenState
               ],
             ),
             const SizedBox(height: 14),
-            Text(
-              _activity.title,
-              style: Theme.of(context).textTheme.headlineMedium,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    _activity.title,
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _buildFavoriteButton(),
+              ],
             ),
             const SizedBox(height: 14),
             _DetailMetaRow(
