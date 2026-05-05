@@ -3038,152 +3038,706 @@ class ActivityNotificationsScreen extends StatefulWidget {
 
 class _ActivityNotificationsScreenState
     extends State<ActivityNotificationsScreen> {
-  late Future<List<CampusNotificationRecord>> _future;
+  var _isLoading = false;
+  var _filter = 'all';
+  List<CampusNotificationRecord> _notifications = const [];
 
   @override
   void initState() {
     super.initState();
-    _future = _loadNotifications();
+    _loadNotifications();
   }
 
-  Future<List<CampusNotificationRecord>> _loadNotifications() async {
-    final records = await CampusRepository.instance.fetchNotifications(
-      category: 'notice',
-    );
-    return records
-        .where((record) => record.action.contains('activity'))
+  List<CampusNotificationRecord> get _activityNotifications {
+    final activityOnly = _notifications
+        .where(_isActivityNotification)
         .toList(growable: false);
+
+    // 后端当前 notice 里如果没有 activity 关联，也先展示 notice，避免页面空白。
+    return activityOnly.isNotEmpty ? activityOnly : _notifications;
   }
 
-  Future<void> _markAllRead() async {
+  List<CampusNotificationRecord> get _visibleNotifications {
+    final list = _activityNotifications;
+    if (_filter == 'unread') {
+      return list.where((item) => item.unread).toList(growable: false);
+    }
+    if (_filter == 'read') {
+      return list.where((item) => !item.unread).toList(growable: false);
+    }
+    return list;
+  }
+
+  int get _unreadCount =>
+      _activityNotifications.where((item) => item.unread).length;
+
+  int get _readCount => _activityNotifications.length - _unreadCount;
+
+  bool _isActivityNotification(CampusNotificationRecord record) {
+    if (record.activity?.id.isNotEmpty == true) return true;
+
+    final text =
+        '${record.title} ${record.firstLine} ${record.secondLine} ${record.action}';
+    const keywords = [
+      '活动',
+      '报名',
+      '签到',
+      '讲座',
+      '音乐',
+      '比赛',
+      '社团',
+      '日历',
+      '名额',
+      '开始',
+      '结束',
+    ];
+
+    return keywords.any(text.contains);
+  }
+
+  Future<void> _loadNotifications({bool showLoading = true}) async {
+    if (showLoading) {
+      setState(() => _isLoading = true);
+    }
+
     try {
-      await CampusRepository.instance.markNotificationsRead();
+      final notifications = await CampusRepository.instance.fetchNotifications(
+        category: 'notice',
+      );
+
       if (!mounted) return;
       setState(() {
-        _future = _loadNotifications();
+        _notifications = notifications;
+        _isLoading = false;
       });
-      _showFeatureMessage(context, '活动通知已全部标记为已读');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showFeatureMessage(context, _featureError(error));
+    }
+  }
+
+  Future<void> _markRecordRead(CampusNotificationRecord record) async {
+    if (!record.unread || record.id.isEmpty) return;
+
+    try {
+      final next = await CampusRepository.instance.markNotificationRead(
+        record.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _notifications = _notifications
+            .map((item) => item.id == next.id ? next : item)
+            .toList(growable: false);
+      });
+    } catch (_) {
+      // 点击跳转时即使已读接口失败，也不阻断页面跳转。
+    }
+  }
+
+  Future<void> _markAllActivityRead() async {
+    final unreadItems = _activityNotifications
+        .where((item) => item.unread && item.id.isNotEmpty)
+        .toList(growable: false);
+
+    if (unreadItems.isEmpty) {
+      _showFeatureMessage(context, '暂无未读活动通知');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      for (final item in unreadItems) {
+        await CampusRepository.instance.markNotificationRead(item.id);
+      }
+
+      await _loadNotifications(showLoading: false);
+      if (mounted) _showFeatureMessage(context, '活动通知已全部标记为已读');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      _showFeatureMessage(context, _featureError(error));
+    }
+  }
+
+  Future<void> _deleteRecord(CampusNotificationRecord record) async {
+    if (record.id.isEmpty) {
+      _showFeatureMessage(context, '这条通知暂未同步到后端');
+      return;
+    }
+
+    try {
+      await CampusRepository.instance.deleteNotification(record.id);
+      if (!mounted) return;
+      setState(() {
+        _notifications = _notifications
+            .where((item) => item.id != record.id)
+            .toList(growable: false);
+      });
+      _showFeatureMessage(context, '已删除通知');
     } catch (error) {
       if (mounted) _showFeatureMessage(context, _featureError(error));
     }
   }
 
+  Future<void> _openNotification(CampusNotificationRecord record) async {
+    await _markRecordRead(record);
+
+    final activity = record.activity;
+    if (activity?.id.isNotEmpty == true) {
+      final changed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActivityEnrollmentDetailScreen(
+            activity: activity!,
+            initialRegistered:
+                activity.activityStatus.isNotEmpty ||
+                activity.isCheckInNotStarted ||
+                activity.isCheckInAvailable ||
+                activity.isCheckedIn ||
+                activity.isEnded,
+            initialFavorite: activity.isFavorited,
+          ),
+        ),
+      );
+
+      if (changed == true) {
+        await _loadNotifications(showLoading: false);
+      }
+      return;
+    }
+
+    _showFeatureMessage(context, record.unread ? '已标记为已读' : '已查看通知');
+  }
+
   @override
   Widget build(BuildContext context) {
+    final visible = _visibleNotifications;
+
     return _FeatureScaffold(
       title: '活动通知',
       actions: [
-        TextButton(
-          onPressed: _markAllRead,
-          child: const Text(
-            '全部已读',
-            style: TextStyle(
-              color: AppColors.blue,
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+        IconButton(
+          tooltip: '全部已读',
+          onPressed: _isLoading ? null : _markAllActivityRead,
+          icon: const Icon(Icons.done_all_rounded, size: 26),
+        ),
+        IconButton(
+          tooltip: '刷新',
+          onPressed: _isLoading ? null : _loadNotifications,
+          icon: const Icon(Icons.refresh_rounded, size: 27),
         ),
         const SizedBox(width: 8),
       ],
-      child: FutureBuilder<List<CampusNotificationRecord>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final records = snapshot.data ?? const <CampusNotificationRecord>[];
-          final hasRemote = records.isNotEmpty;
+      child: RefreshIndicator(
+        onRefresh: _loadNotifications,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
+          children: [
+            if (_isLoading) const LinearProgressIndicator(minHeight: 2),
+            const SizedBox(height: 10),
+            _ActivityNoticeOverview(
+              total: _activityNotifications.length,
+              unread: _unreadCount,
+              read: _readCount,
+            ),
+            const SizedBox(height: 14),
+            _ActivityNoticeFilterBar(
+              selected: _filter,
+              total: _activityNotifications.length,
+              unread: _unreadCount,
+              read: _readCount,
+              onChanged: (value) => setState(() => _filter = value),
+            ),
+            const SizedBox(height: 14),
+            if (visible.isEmpty)
+              _ActivityNoticeEmptyState(filter: _filter)
+            else
+              for (final record in visible)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _ActivityNoticeTile(
+                    record: record,
+                    onTap: () => _openNotification(record),
+                    onDelete: () => _deleteRecord(record),
+                  ),
+                ),
+            const SizedBox(height: 8),
+            const Center(
+              child: Text(
+                '没有更多了',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
+class _ActivityNoticeOverview extends StatelessWidget {
+  const _ActivityNoticeOverview({
+    required this.total,
+    required this.unread,
+    required this.read,
+  });
+
+  final int total;
+  final int unread;
+  final int read;
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      child: Row(
+        children: [
+          _ActivityNoticeStat(
+            icon: Icons.notifications_active_rounded,
+            label: '全部',
+            value: total,
+            color: AppColors.blue,
+          ),
+          _ActivityNoticeStat(
+            icon: Icons.mark_email_unread_rounded,
+            label: '未读',
+            value: unread,
+            color: AppColors.orange,
+          ),
+          _ActivityNoticeStat(
+            icon: Icons.task_alt_rounded,
+            label: '已读',
+            value: read,
+            color: AppColors.green,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityNoticeStat extends StatelessWidget {
+  const _ActivityNoticeStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: color, size: 25),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$value',
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppColors.muted,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityNoticeFilterBar extends StatelessWidget {
+  const _ActivityNoticeFilterBar({
+    required this.selected,
+    required this.total,
+    required this.unread,
+    required this.read,
+    required this.onChanged,
+  });
+
+  final String selected;
+  final int total;
+  final int unread;
+  final int read;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _ActivityNoticeFilterChip(
+          label: '全部 $total',
+          value: 'all',
+          selected: selected == 'all',
+          onTap: onChanged,
+        ),
+        const SizedBox(width: 8),
+        _ActivityNoticeFilterChip(
+          label: '未读 $unread',
+          value: 'unread',
+          selected: selected == 'unread',
+          onTap: onChanged,
+        ),
+        const SizedBox(width: 8),
+        _ActivityNoticeFilterChip(
+          label: '已读 $read',
+          value: 'read',
+          selected: selected == 'read',
+          onTap: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _ActivityNoticeFilterChip extends StatelessWidget {
+  const _ActivityNoticeFilterChip({
+    required this.label,
+    required this.value,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final bool selected;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: selected ? AppColors.blue : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: () => onTap(value),
+          child: Container(
+            height: 46,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: selected ? AppColors.blue : AppColors.line,
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityNoticeTile extends StatelessWidget {
+  const _ActivityNoticeTile({
+    required this.record,
+    required this.onTap,
+    required this.onDelete,
+  });
+
+  final CampusNotificationRecord record;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+
+  Color get _color {
+    final text = '${record.title} ${record.firstLine} ${record.action}';
+    if (text.contains('签到')) return AppColors.green;
+    if (text.contains('报名')) return AppColors.blue;
+    if (text.contains('取消') || text.contains('结束')) return AppColors.red;
+    if (text.contains('开始') || text.contains('提醒')) return AppColors.orange;
+    return AppColors.purple;
+  }
+
+  IconData get _icon {
+    final text = '${record.title} ${record.firstLine} ${record.action}';
+    if (text.contains('签到')) return Icons.event_available_rounded;
+    if (text.contains('报名')) return Icons.fact_check_rounded;
+    if (text.contains('取消')) return Icons.event_busy_rounded;
+    if (text.contains('开始') || text.contains('提醒')) {
+      return Icons.alarm_rounded;
+    }
+    return Icons.notifications_active_rounded;
+  }
+
+  String get _title {
+    if (record.title.trim().isNotEmpty) return record.title;
+    return '活动通知';
+  }
+
+  String get _firstLine {
+    if (record.firstLine.trim().isNotEmpty) return record.firstLine;
+    final activityTitle = record.activity?.title ?? '';
+    return activityTitle.isNotEmpty ? activityTitle : '你有一条新的活动通知';
+  }
+
+  String get _secondLine {
+    if (record.secondLine.trim().isNotEmpty) return record.secondLine;
+    final activity = record.activity;
+    if (activity?.id.isNotEmpty == true) {
+      return '${activity!.date} · ${activity.time} · ${activity.location}';
+    }
+    return record.createdAt;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CampusCard(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 10, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _FilterBar(labels: ['全部', '报名', '提醒', '变更']),
-              const SizedBox(height: 10),
-              ColoredBox(
-                color: AppColors.surface,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-                  child: Column(
-                    children: [
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          !hasRemote)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 32, bottom: 18),
-                          child: CircularProgressIndicator(
-                            color: AppColors.blue,
-                          ),
-                        ),
-                      if (hasRemote)
-                        for (final record in records)
-                          _NotificationCard(
-                            icon: _activityNoticeIconFor(record.action),
-                            color: _activityNoticeColorFor(record.action),
-                            title: record.title,
-                            body: _activityNoticeBody(record),
-                            time: _friendlyFeatureTime(record.createdAt),
-                            showUnreadDot: record.unread,
-                          )
-                      else if (snapshot.connectionState !=
-                          ConnectionState.waiting) ...[
-                        const _NotificationCard(
-                          icon: Icons.event_available_rounded,
-                          color: AppColors.green,
-                          title: '报名成功',
-                          body: '你已成功报名「AI 未来发展趋势讲座」',
-                          time: '2分钟前',
-                        ),
-                        const _NotificationCard(
-                          icon: Icons.notifications_none_rounded,
-                          color: AppColors.blue,
-                          title: '活动提醒',
-                          body: '「校园篮球友谊赛」即将开始',
-                          time: '30分钟前',
-                        ),
-                        const _NotificationCard(
-                          icon: Icons.error_outline_rounded,
-                          color: AppColors.orange,
-                          title: '活动变更',
-                          body: '「摄影社团采风活动」时间调整通知',
-                          time: '1小时前',
-                        ),
-                      ],
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10, bottom: 22),
-                        child: Text(
-                          hasRemote ? '已加载全部通知' : '暂无新的活动通知',
-                          style: const TextStyle(color: AppColors.muted),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: _color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(_icon, color: _color, size: 27),
+                  ),
+                  if (record.unread)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: const BoxDecoration(
+                          color: AppColors.red,
+                          shape: BoxShape.circle,
                         ),
                       ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppColors.ink,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        if (record.unread)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.red.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: const Text(
+                              '未读',
+                              style: TextStyle(
+                                color: AppColors.red,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _firstLine,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _secondLine,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (record.activity?.id.isNotEmpty == true) ...[
+                      const SizedBox(height: 9),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.touch_app_rounded,
+                            size: 15,
+                            color: _color,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '点击查看活动详情',
+                            style: TextStyle(
+                              color: _color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
-                  ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: '删除通知',
+                onPressed: onDelete,
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: AppColors.muted,
+                  size: 22,
                 ),
               ),
             ],
-          );
-        },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityNoticeEmptyState extends StatelessWidget {
+  const _ActivityNoticeEmptyState({required this.filter});
+
+  final String filter;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = switch (filter) {
+      'unread' => '暂无未读活动通知',
+      'read' => '暂无已读活动通知',
+      _ => '暂无活动通知',
+    };
+
+    return CampusCard(
+      padding: const EdgeInsets.fromLTRB(20, 34, 20, 32),
+      child: Column(
+        children: [
+          Container(
+            width: 74,
+            height: 74,
+            decoration: BoxDecoration(
+              color: AppColors.blue.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Icon(
+              Icons.notifications_none_rounded,
+              color: AppColors.blue,
+              size: 40,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            text,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '报名、签到、活动变更等消息会在这里展示。',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.muted,
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 String _activityNoticeBody(CampusNotificationRecord record) {
-  final secondLine = record.secondLine.trim();
-  if (secondLine.isEmpty) return record.firstLine;
-  return '${record.firstLine}\n$secondLine';
+  if (record.firstLine.trim().isNotEmpty) return record.firstLine;
+  if (record.activity?.title.isNotEmpty == true) {
+    return '活动「${record.activity!.title}」有新的状态更新';
+  }
+  return '你有一条新的活动通知';
 }
 
-Color _activityNoticeColorFor(String action) {
-  if (action.contains('cancel')) return AppColors.red;
-  if (action.contains('updated')) return AppColors.orange;
-  if (action.contains('checkin')) return AppColors.purple;
-  if (action.contains('enrollment')) return AppColors.blue;
-  return AppColors.green;
+Color _activityNoticeColorFor(CampusNotificationRecord record) {
+  final text = '${record.title} ${record.firstLine} ${record.action}';
+  if (text.contains('签到')) return AppColors.green;
+  if (text.contains('报名')) return AppColors.blue;
+  if (text.contains('取消') || text.contains('结束')) return AppColors.red;
+  if (text.contains('开始') || text.contains('提醒')) return AppColors.orange;
+  return AppColors.purple;
 }
 
-IconData _activityNoticeIconFor(String action) {
-  if (action.contains('cancel')) return Icons.block_rounded;
-  if (action.contains('checkin')) return Icons.qr_code_rounded;
-  if (action.contains('updated')) return Icons.edit_calendar_rounded;
-  if (action.contains('enrollment')) return Icons.groups_rounded;
-  return Icons.event_available_rounded;
+IconData _activityNoticeIconFor(CampusNotificationRecord record) {
+  final text = '${record.title} ${record.firstLine} ${record.action}';
+  if (text.contains('签到')) return Icons.event_available_rounded;
+  if (text.contains('报名')) return Icons.fact_check_rounded;
+  if (text.contains('取消')) return Icons.event_busy_rounded;
+  if (text.contains('开始') || text.contains('提醒')) {
+    return Icons.alarm_rounded;
+  }
+  return Icons.notifications_active_rounded;
 }
 
 class CreateActivityScreen extends StatefulWidget {

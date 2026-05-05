@@ -441,7 +441,8 @@ class CampusActivity {
       endAt: _readString(json, 'endAt'),
       checkInStartAt: _readString(json, 'checkInStartAt'),
       checkInEndAt: _readString(json, 'checkInEndAt'),
-      isFavorited: json['isFavorited'] == true ||
+      isFavorited:
+          json['isFavorited'] == true ||
           json['favorited'] == true ||
           json['favorite'] == true,
     );
@@ -713,6 +714,7 @@ class CampusNotificationRecord {
     required this.unread,
     this.actor,
     this.post,
+    this.activity,
     this.group,
   });
 
@@ -726,11 +728,13 @@ class CampusNotificationRecord {
   final bool unread;
   final CampusUser? actor;
   final CampusPost? post;
+  final CampusActivity? activity;
   final CampusGroup? group;
 
   factory CampusNotificationRecord.fromJson(Map<String, dynamic> json) {
     final actorJson = _readMap(json, 'actor');
     final postJson = _readMap(json, 'post');
+    final activityJson = _readMap(json, 'activity');
     final groupJson = _readMap(json, 'group');
     return CampusNotificationRecord(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
@@ -743,6 +747,9 @@ class CampusNotificationRecord {
       unread: json['unread'] == true,
       actor: actorJson == null ? null : CampusUser.fromJson(actorJson),
       post: postJson == null ? null : CampusPost.fromJson(postJson),
+      activity: activityJson == null
+          ? null
+          : CampusActivity.fromJson(activityJson),
       group: groupJson == null ? null : CampusGroup.fromJson(groupJson),
     );
   }
