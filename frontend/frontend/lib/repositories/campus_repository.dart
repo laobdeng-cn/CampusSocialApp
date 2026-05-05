@@ -13,16 +13,77 @@ class CampusRepository {
   final CampusApiClient _apiClient;
 
   CampusFeed _cachedFeed = fallbackFeed;
+  Set<String> _cachedFavoriteActivityIds = <String>{};
 
   CampusFeed get cachedFeed => _cachedFeed;
+
+  void _cacheFavoriteRecords(List<CampusFavoriteRecord> favorites) {
+    _cachedFavoriteActivityIds = favorites
+        .where(
+          (record) =>
+              record.kind == 'activity' && record.activity.id.isNotEmpty,
+        )
+        .map((record) => record.activity.id)
+        .toSet();
+  }
+
+  CampusFeed _applyFavoriteStateToFeed(CampusFeed feed) {
+    return CampusFeed(
+      users: feed.users,
+      posts: feed.posts,
+      activities: feed.activities
+          .map(
+            (activity) => activity.copyWith(
+              isFavorited: _cachedFavoriteActivityIds.contains(activity.id),
+            ),
+          )
+          .toList(growable: false),
+      groups: feed.groups,
+      topics: feed.topics,
+    );
+  }
+
+  Future<void> _syncFavoriteActivityIds() async {
+    final token = AuthSession.token;
+    if (token?.isNotEmpty != true) {
+      _cachedFavoriteActivityIds = <String>{};
+      _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
+      return;
+    }
+
+    final favorites = await _apiClient.fetchFavorites(token: token!);
+    _cacheFavoriteRecords(favorites);
+    _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
+  }
+
+  void _setCachedActivityFavorite(String id, bool favorited) {
+    if (id.isEmpty) return;
+
+    if (favorited) {
+      _cachedFavoriteActivityIds = {..._cachedFavoriteActivityIds, id};
+    } else {
+      _cachedFavoriteActivityIds = _cachedFavoriteActivityIds
+          .where((item) => item != id)
+          .toSet();
+    }
+
+    _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
+  }
 
   Future<CampusFeed> fetchFeed() async {
     try {
       final remoteFeed = await _apiClient.fetchFeed();
       _cachedFeed = _normalizeFeed(remoteFeed);
+
+      try {
+        await _syncFavoriteActivityIds();
+      } catch (_) {
+        _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
+      }
+
       return _cachedFeed;
     } catch (_) {
-      _cachedFeed = fallbackFeed;
+      _cachedFeed = _applyFavoriteStateToFeed(fallbackFeed);
       return _cachedFeed;
     }
   }
@@ -350,12 +411,38 @@ class CampusRepository {
 
   Future<CampusActivity> toggleActivityFavorite(CampusActivity activity) async {
     final id = _requireActivityId(activity);
-    return _replaceCachedActivity(
-      await _apiClient.toggleActivityFavorite(
+    final before =
+        _cachedFavoriteActivityIds.contains(id) || activity.isFavorited;
+
+    try {
+      final remoteActivity = await _apiClient.toggleActivityFavorite(
         token: _requireToken(),
         activityId: id,
-      ),
-    );
+      );
+
+      _setCachedActivityFavorite(id, !before);
+
+      try {
+        await _syncFavoriteActivityIds();
+      } catch (_) {}
+
+      final after = _cachedFavoriteActivityIds.contains(id);
+      return _replaceCachedActivity(
+        remoteActivity.copyWith(isFavorited: after),
+      );
+    } catch (error) {
+      try {
+        await _syncFavoriteActivityIds();
+        final after = _cachedFavoriteActivityIds.contains(id);
+
+        // 如果后端其实已经成功变更，只是返回解析异常，不再误提示失败
+        if (after != before) {
+          return _replaceCachedActivity(activity.copyWith(isFavorited: after));
+        }
+      } catch (_) {}
+
+      rethrow;
+    }
   }
 
   Future<List<CampusActivity>> fetchMyActivities() async {
@@ -435,8 +522,11 @@ class CampusRepository {
     );
   }
 
-  Future<List<CampusFavoriteRecord>> fetchFavorites() {
-    return _apiClient.fetchFavorites(token: _requireToken());
+  Future<List<CampusFavoriteRecord>> fetchFavorites() async {
+    final favorites = await _apiClient.fetchFavorites(token: _requireToken());
+    _cacheFavoriteRecords(favorites);
+    _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
+    return favorites;
   }
 
   Future<List<CampusHistoryRecord>> fetchHistory() {

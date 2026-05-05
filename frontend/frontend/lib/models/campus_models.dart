@@ -366,6 +366,7 @@ class CampusActivity {
     this.endAt = '',
     this.checkInStartAt = '',
     this.checkInEndAt = '',
+    this.isFavorited = false,
   });
 
   final String id;
@@ -396,6 +397,7 @@ class CampusActivity {
   final String endAt;
   final String checkInStartAt;
   final String checkInEndAt;
+  final bool isFavorited;
 
   bool get isCheckInNotStarted => checkInStatus == 'not_started';
   bool get isCheckInAvailable =>
@@ -439,6 +441,9 @@ class CampusActivity {
       endAt: _readString(json, 'endAt'),
       checkInStartAt: _readString(json, 'checkInStartAt'),
       checkInEndAt: _readString(json, 'checkInEndAt'),
+      isFavorited: json['isFavorited'] == true ||
+          json['favorited'] == true ||
+          json['favorite'] == true,
     );
   }
 
@@ -459,6 +464,7 @@ class CampusActivity {
     String? endAt,
     String? checkInStartAt,
     String? checkInEndAt,
+    bool? isFavorited,
   }) {
     return CampusActivity(
       id: id ?? this.id,
@@ -483,6 +489,7 @@ class CampusActivity {
       endAt: endAt ?? this.endAt,
       checkInStartAt: checkInStartAt ?? this.checkInStartAt,
       checkInEndAt: checkInEndAt ?? this.checkInEndAt,
+      isFavorited: isFavorited ?? this.isFavorited,
     );
   }
 }

@@ -352,9 +352,12 @@ class ActivitiesScreen extends StatelessWidget {
             const SizedBox(height: 14),
             const _ActivityRecruitBanner(),
             const SizedBox(height: 14),
-            const _ActivityShortcutGrid(),
+            _ActivityShortcutGrid(onReturn: onRefresh),
             const SizedBox(height: 14),
-            _HotActivitiesPanel(activities: feed.activities),
+            _HotActivitiesPanel(
+              activities: feed.activities,
+              onChanged: onRefresh,
+            ),
           ],
         ),
       ),
@@ -532,7 +535,9 @@ class _ActivityRecruitBanner extends StatelessWidget {
 }
 
 class _ActivityShortcutGrid extends StatelessWidget {
-  const _ActivityShortcutGrid();
+  const _ActivityShortcutGrid({this.onReturn});
+
+  final Future<void> Function()? onReturn;
 
   @override
   Widget build(BuildContext context) {
@@ -557,14 +562,24 @@ class _ActivityShortcutGrid extends StatelessWidget {
             Row(
               children: [
                 for (final item in _activityShortcuts.take(4))
-                  Expanded(child: _ActivityShortcutTile(item: item)),
+                  Expanded(
+                    child: _ActivityShortcutTile(
+                      item: item,
+                      onReturn: onReturn,
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
             Row(
               children: [
                 for (final item in _activityShortcuts.skip(4))
-                  Expanded(child: _ActivityShortcutTile(item: item)),
+                  Expanded(
+                    child: _ActivityShortcutTile(
+                      item: item,
+                      onReturn: onReturn,
+                    ),
+                  ),
               ],
             ),
           ],
@@ -589,9 +604,10 @@ class _ActivityShortcut {
 }
 
 class _ActivityShortcutTile extends StatelessWidget {
-  const _ActivityShortcutTile({required this.item});
+  const _ActivityShortcutTile({required this.item, this.onReturn});
 
   final _ActivityShortcut item;
+  final Future<void> Function()? onReturn;
 
   @override
   Widget build(BuildContext context) {
@@ -599,13 +615,14 @@ class _ActivityShortcutTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () {
-          Navigator.push(
+        onTap: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => _shortcutDestinationPage(item.destination),
             ),
           );
+          await onReturn?.call();
         },
         child: SizedBox(
           height: 48,
@@ -653,9 +670,13 @@ Widget _shortcutDestinationPage(_ActivityShortcutDestination destination) {
 }
 
 class _HotActivitiesPanel extends StatelessWidget {
-  const _HotActivitiesPanel({required this.activities});
+  const _HotActivitiesPanel({
+    required this.activities,
+    required this.onChanged,
+  });
 
   final List<CampusActivity> activities;
+  final Future<void> Function() onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -693,13 +714,14 @@ class _HotActivitiesPanel extends StatelessWidget {
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        Navigator.push(
+                      onTap: () async {
+                        await Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const ActivityCategoriesScreen(),
                           ),
                         );
+                        await onChanged();
                       },
                       child: const Padding(
                         padding: EdgeInsets.symmetric(
@@ -733,7 +755,10 @@ class _HotActivitiesPanel extends StatelessWidget {
             ),
             for (var index = 0; index < activities.length; index++) ...[
               if (index > 0) const Divider(),
-              ActivityListCard(activity: activities[index]),
+              ActivityListCard(
+                activity: activities[index],
+                onChanged: onChanged,
+              ),
             ],
           ],
         ),
@@ -9873,202 +9898,240 @@ class _PostFeedCardState extends State<PostFeedCard> {
 }
 
 class ActivityListCard extends StatefulWidget {
-  const ActivityListCard({required this.activity, super.key});
+  const ActivityListCard({required this.activity, super.key, this.onChanged});
 
   final CampusActivity activity;
+  final Future<void> Function()? onChanged;
 
   @override
   State<ActivityListCard> createState() => _ActivityListCardState();
 }
 
 class _ActivityListCardState extends State<ActivityListCard> {
-  late CampusActivity _activity = widget.activity;
-  var _isRegistered = false;
-  var _isJoining = false;
-  var _isFavorite = false;
+  late CampusActivity _activity;
   var _isFavoriting = false;
 
-  Future<void> _toggleRegistration() async {
-    if (_isJoining) return;
-    setState(() => _isJoining = true);
-    try {
-      final nextActivity = _isRegistered
-          ? await CampusRepository.instance.cancelActivityJoin(_activity)
-          : await CampusRepository.instance.joinActivity(_activity);
-      if (!mounted) return;
-      setState(() {
-        _activity = nextActivity;
-        _isRegistered = !_isRegistered;
-      });
-      _showShellMessage(context, _isRegistered ? '报名成功' : '已取消报名');
-    } catch (error) {
-      if (mounted) _showShellMessage(context, _shellError(error));
-    } finally {
-      if (mounted) setState(() => _isJoining = false);
+  @override
+  void initState() {
+    super.initState();
+    _activity = widget.activity;
+  }
+
+  @override
+  void didUpdateWidget(covariant ActivityListCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activity.id != widget.activity.id ||
+        oldWidget.activity.isFavorited != widget.activity.isFavorited ||
+        oldWidget.activity.enrolled != widget.activity.enrolled) {
+      _activity = widget.activity;
     }
   }
 
   Future<void> _toggleFavorite() async {
     if (_isFavoriting) return;
-    setState(() => _isFavoriting = true);
-    final previousFavorite = _isFavorite;
-    setState(() => _isFavorite = !_isFavorite);
+
+    if (_activity.id.isEmpty) {
+      _showShellMessage(context, '这场活动暂未同步到后端');
+      return;
+    }
+
+    final before = _activity.isFavorited;
+    final localBefore = _activity;
+
+    // 只更新收藏状态，不替换整条 activity，避免后端返回缺少报名状态导致按钮闪动。
+    setState(() {
+      _isFavoriting = true;
+      _activity = _activity.copyWith(isFavorited: !before);
+    });
+
     try {
-      final nextActivity = await CampusRepository.instance
-          .toggleActivityFavorite(_activity);
+      final next = await CampusRepository.instance.toggleActivityFavorite(
+        localBefore,
+      );
+
       if (!mounted) return;
-      setState(() => _activity = nextActivity);
-      _showShellMessage(context, _isFavorite ? '已收藏活动' : '已取消收藏');
+
+      setState(() {
+        _activity = _activity.copyWith(isFavorited: next.isFavorited);
+      });
+
+      _showShellMessage(context, next.isFavorited ? '已收藏活动' : '已取消收藏');
+
+      // 这里不立即刷新父级 feed，避免列表整块重建造成闪动。
+      // 进入/返回“我的收藏”页面时会重新拉取真实数据。
     } catch (error) {
       if (!mounted) return;
-      setState(() => _isFavorite = previousFavorite);
+
+      setState(() => _activity = localBefore);
       _showShellMessage(context, _shellError(error));
     } finally {
-      if (mounted) setState(() => _isFavoriting = false);
+      if (mounted) {
+        setState(() => _isFavoriting = false);
+      }
+    }
+  }
+
+  Future<void> _openDetail() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: _activity,
+          initialRegistered:
+              _activity.activityStatus.isNotEmpty ||
+              _activity.isCheckInNotStarted ||
+              _activity.isCheckInAvailable ||
+              _activity.isCheckedIn ||
+              _activity.isEnded,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await widget.onChanged?.call();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final activity = _activity;
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ActivityDetailScreen(activity: activity),
-          ),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SmartImage(
-              url: activity.posterUrl,
-              width: 102,
-              height: 86,
-              borderRadius: 10,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activity.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: AppColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 7,
-                    runSpacing: 4,
+    final tags = activity.highlights.isEmpty
+        ? [activity.category]
+        : activity.highlights.take(2).toList(growable: false);
+    final isRegistered =
+        activity.activityStatus == 'registered' ||
+        activity.isCheckInNotStarted ||
+        activity.isCheckInAvailable ||
+        activity.isCheckedIn ||
+        activity.isEnded;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openDetail,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SmartImage(
+                url: activity.posterUrl,
+                width: 104,
+                height: 118,
+                borderRadius: 11,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 152,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _ActivityTag(
-                        label: activity.category,
-                        color: AppColors.blue,
+                      Text(
+                        activity.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                      const _ActivityTag(label: '热门', color: AppColors.green),
+                      const SizedBox(height: 7),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (var i = 0; i < tags.length; i++)
+                            _ActivityTag(
+                              label: tags[i],
+                              color: i == 0 ? AppColors.blue : AppColors.green,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        '${activity.date}   ${activity.time}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        activity.location,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          AvatarStack(users: activity.guests, size: 24),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${activity.enrolled}人已报名',
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${activity.date}  ${activity.time}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 12,
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    activity.location,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 12,
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      AvatarStack(users: activity.guests, size: 21),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          '${activity.enrolled}人已报名',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.muted,
-                            fontSize: 12,
-                            height: 1.15,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: _isFavoriting ? null : _toggleFavorite,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 120),
+                          transitionBuilder: (child, animation) {
+                            return ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            activity.isFavorited
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            key: ValueKey(activity.isFavorited),
+                            color: activity.isFavorited
+                                ? AppColors.orange
+                                : AppColors.muted,
+                            size: 31,
                           ),
                         ),
                       ),
-                    ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _JoinActivityButton(
+                    label: isRegistered ? '已报名' : '报名参加',
+                    color: isRegistered ? AppColors.blue : AppColors.green,
+                    isLoading: false,
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 6),
-            SizedBox(
-              width: 68,
-              height: 86,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  IconButton(
-                    onPressed: _isFavoriting ? null : _toggleFavorite,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 31,
-                      height: 31,
-                    ),
-                    icon: _isFavoriting
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _isFavorite
-                                ? Icons.star_rounded
-                                : Icons.star_border_rounded,
-                            color: _isFavorite
-                                ? AppColors.orange
-                                : const Color(0xFF7D8898),
-                            size: 29,
-                          ),
-                  ),
-                  const Spacer(),
-                  GestureDetector(
-                    onTap: _toggleRegistration,
-                    child: _JoinActivityButton(
-                      label: _isJoining
-                          ? '处理中'
-                          : _isRegistered
-                          ? '已报名'
-                          : '报名参加',
-                      color: _isRegistered ? AppColors.blue : AppColors.green,
-                      isLoading: _isJoining,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
