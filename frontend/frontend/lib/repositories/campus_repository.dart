@@ -313,6 +313,7 @@ class CampusRepository {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    required String checkInCode,
   }) async {
     final activity = await _apiClient.createActivity(
       token: _requireToken(),
@@ -329,6 +330,7 @@ class CampusRepository {
       allowComments: allowComments,
       publicDisplay: publicDisplay,
       posterUrl: posterUrl,
+      checkInCode: checkInCode,
     );
     final enriched = _enrichActivity(activity, _cachedFeed.users);
     _cachedFeed = CampusFeed(
@@ -385,18 +387,12 @@ class CampusRepository {
     _removeCachedActivity(id);
   }
 
-  Future<({String code, CampusActivity activity})> resetActivityCheckInCode(
-    CampusActivity activity,
-  ) async {
-    final id = _requireActivityId(activity);
-    final result = await _apiClient.resetActivityCheckInCode(
+  Future<String> resetActivityCheckInCode(CampusActivity activity) async {
+    final code = await _apiClient.resetActivityCheckInCode(
       token: _requireToken(),
-      activityId: id,
+      activityId: activity.id,
     );
-    return (
-      code: result.code,
-      activity: _replaceCachedActivity(result.activity),
-    );
+    return code;
   }
 
   Future<CampusActivity> cancelActivityJoin(CampusActivity activity) async {
@@ -827,6 +823,7 @@ class CampusRepository {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    required String checkInCode,
   }) async {
     final groupId = _requireGroupId(group);
     final activity = await _apiClient.createGroupActivity(
@@ -845,6 +842,7 @@ class CampusRepository {
       allowComments: allowComments,
       publicDisplay: publicDisplay,
       posterUrl: posterUrl,
+      checkInCode: checkInCode,
     );
     final enrichedActivity = _replaceCachedActivity(activity);
     final updatedGroup = group.copyWith(

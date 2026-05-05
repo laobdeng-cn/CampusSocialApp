@@ -411,10 +411,10 @@ const _activityShortcuts = [
     destination: _ActivityShortcutDestination.notifications,
   ),
   _ActivityShortcut(
-    icon: Icons.add_circle_outline_rounded,
-    label: '发起活动',
+    icon: Icons.manage_accounts_rounded,
+    label: '我发起的',
     color: AppColors.green,
-    destination: _ActivityShortcutDestination.create,
+    destination: _ActivityShortcutDestination.created,
   ),
 ];
 
@@ -426,6 +426,7 @@ enum _ActivityShortcutDestination {
   calendar,
   checkIn,
   notifications,
+  created,
   create,
 }
 
@@ -664,6 +665,8 @@ Widget _shortcutDestinationPage(_ActivityShortcutDestination destination) {
       return const ActivityCheckInScreen();
     case _ActivityShortcutDestination.notifications:
       return const ActivityNotificationsScreen();
+    case _ActivityShortcutDestination.created:
+      return const MyCreatedActivitiesScreen();
     case _ActivityShortcutDestination.create:
       return const CreateActivityScreen();
   }

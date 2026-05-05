@@ -9,7 +9,7 @@ import '../models/campus_models.dart';
 class CampusApiClient {
   CampusApiClient({String? baseUrl, Duration? timeout})
     : baseUrl = baseUrl ?? _defaultBaseUrl(),
-      timeout = timeout ?? const Duration(seconds: 2);
+      timeout = timeout ?? const Duration(seconds: 8);
 
   final String baseUrl;
   final Duration timeout;
@@ -239,6 +239,7 @@ class CampusApiClient {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    required String checkInCode,
   }) async {
     final json = await _postJson('/api/activities', {
       'title': title,
@@ -256,7 +257,7 @@ class CampusApiClient {
       'posterUrl': posterUrl.isEmpty
           ? 'asset:assets/images/activity_stage_blue.png'
           : posterUrl,
-      'checkInCode': 'CAMPUS2026',
+      'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
     }, token: token);
     return _readActivityPayload(json);
   }
@@ -303,7 +304,7 @@ class CampusApiClient {
     await _deleteJson('/api/activities/$activityId', token: token);
   }
 
-  Future<({String code, CampusActivity activity})> resetActivityCheckInCode({
+  Future<String> resetActivityCheckInCode({
     required String token,
     required String activityId,
   }) async {
@@ -312,10 +313,23 @@ class CampusApiClient {
       {},
       token: token,
     );
-    return (
-      code: (json['code'] ?? '').toString(),
-      activity: _readActivityPayload(json),
-    );
+
+    final data = json['data'];
+    final dataMap = data is Map ? data.cast<String, dynamic>() : null;
+
+    final activityValue = json['activity'] ?? dataMap?['activity'];
+    final activityMap = activityValue is Map
+        ? activityValue.cast<String, dynamic>()
+        : null;
+
+    final codeValue =
+        json['code'] ??
+        dataMap?['code'] ??
+        json['checkInCode'] ??
+        dataMap?['checkInCode'] ??
+        activityMap?['checkInCode'];
+
+    return (codeValue ?? '').toString();
   }
 
   Future<CampusActivity> cancelActivityJoin({
@@ -813,6 +827,7 @@ class CampusApiClient {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    required String checkInCode,
   }) async {
     final json = await _postJson('/api/groups/$groupId/activities', {
       'title': title,
@@ -830,6 +845,7 @@ class CampusApiClient {
       'posterUrl': posterUrl.isEmpty
           ? 'asset:assets/images/activity_stage_blue.png'
           : posterUrl,
+      'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
     }, token: token);
     return _readActivityPayload(json);
   }

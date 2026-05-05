@@ -210,6 +210,10 @@ function serializeActivity(activity, options = {}) {
   };
 }
 
+function generateResetCheckInCode() {
+  return `ACT${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
 function serializeCheckIn(checkIn) {
   if (!checkIn) return null;
   const plain = typeof checkIn.toObject === 'function' ? checkIn.toObject() : checkIn;
@@ -354,6 +358,43 @@ router.get('/me/checkins', requireAuth, async (request, response, next) => {
 
 router.delete('/activities/:id/join', requireAuth, async (_request, response) => {
   response.status(409).json({ message: '报名成功后不可取消，请按时参加活动并完成签到' });
+});
+
+router.post('/activities/:id/checkin-code/reset', requireAuth, async (request, response, next) => {
+  try {
+    console.log(`[activity] reset check-in code request: ${request.params.id}`);
+
+    const activity = await findActivityByAnyId(request.params.id);
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在' });
+      return;
+    }
+
+    const ownerId = String(activity.createdBy?._id || activity.createdBy || '');
+    const currentUserId = String(request.user._id || '');
+
+    if (ownerId !== currentUserId) {
+      response.status(403).json({ message: '只有活动发起人可以重置签到口令' });
+      return;
+    }
+
+    activity.checkInCode = generateResetCheckInCode();
+    await activity.save();
+
+    const populated = await Activity.findById(activity._id).populate('createdBy');
+
+    console.log(
+      `[activity] reset check-in code success: ${activity._id} -> ${activity.checkInCode}`
+    );
+
+    response.json({
+      code: activity.checkInCode,
+      activity: serializeActivity(populated),
+    });
+  } catch (error) {
+    console.error('[activity] reset check-in code failed:', error);
+    next(error);
+  }
 });
 
 router.post('/activities/:id/checkins', requireAuth, async (request, response, next) => {
