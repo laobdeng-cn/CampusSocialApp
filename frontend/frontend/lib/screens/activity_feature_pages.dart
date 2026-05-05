@@ -6767,11 +6767,13 @@ class ActivityEnrollmentDetailScreen extends StatefulWidget {
   const ActivityEnrollmentDetailScreen({
     required this.activity,
     this.initialRegistered = false,
+    this.initialFavorite = false,
     super.key,
   });
 
   final CampusActivity activity;
   final bool initialRegistered;
+  final bool initialFavorite;
 
   @override
   State<ActivityEnrollmentDetailScreen> createState() =>
@@ -6782,6 +6784,8 @@ class _ActivityEnrollmentDetailScreenState
     extends State<ActivityEnrollmentDetailScreen> {
   late CampusActivity _activity;
   late bool _registered;
+  var _isFavorited = false;
+  var _isTogglingFavorite = false;
   var _isCheckingStatus = false;
   var _isSubmitting = false;
   var _changed = false;
@@ -6791,7 +6795,78 @@ class _ActivityEnrollmentDetailScreenState
     super.initState();
     _activity = widget.activity;
     _registered = widget.initialRegistered;
+    _isFavorited = widget.initialFavorite || _activity.isFavorited;
     _loadRegistrationStatus();
+    _loadFavoriteStatus();
+  }
+
+  Future<void> _loadFavoriteStatus() async {
+    if (_activity.id.isEmpty) return;
+
+    try {
+      final favorites = await CampusRepository.instance.fetchFavorites();
+      if (!mounted) return;
+
+      final favorited = favorites.any(
+        (record) =>
+            record.kind == 'activity' && record.activity.id == _activity.id,
+      );
+
+      setState(() {
+        _isFavorited = favorited;
+        _activity = _activity.copyWith(isFavorited: favorited);
+      });
+    } catch (_) {
+      // 未登录或网络异常时，保留从活动列表传入的状态，避免详情页不可用。
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isTogglingFavorite) return;
+
+    if (_activity.id.isEmpty) {
+      _showFeatureMessage(context, '这场活动暂未同步到后端');
+      return;
+    }
+
+    final before = _isFavorited;
+    final localBefore = _activity;
+
+    setState(() {
+      _isTogglingFavorite = true;
+      _isFavorited = !before;
+      _activity = _activity.copyWith(isFavorited: !before);
+      _changed = true;
+    });
+
+    try {
+      final next = await CampusRepository.instance.toggleActivityFavorite(
+        localBefore,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isFavorited = next.isFavorited;
+        _activity = _activity.copyWith(isFavorited: next.isFavorited);
+        _changed = true;
+      });
+
+      _showFeatureMessage(context, next.isFavorited ? '已收藏活动' : '已取消收藏');
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _isFavorited = before;
+        _activity = localBefore;
+      });
+
+      _showFeatureMessage(context, _featureError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isTogglingFavorite = false);
+      }
+    }
   }
 
   Future<void> _loadRegistrationStatus() async {
@@ -6948,7 +7023,28 @@ class _ActivityEnrollmentDetailScreenState
               width: double.infinity,
               borderRadius: 20,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _isTogglingFavorite ? null : _toggleFavorite,
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 120),
+                  transitionBuilder: (child, animation) {
+                    return ScaleTransition(scale: animation, child: child);
+                  },
+                  child: Icon(
+                    _isFavorited
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    key: ValueKey(_isFavorited),
+                    color: _isFavorited ? AppColors.orange : AppColors.blue,
+                  ),
+                ),
+                label: Text(_isFavorited ? '已收藏' : '收藏'),
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Pill(label: _activity.category, color: AppColors.blue),
