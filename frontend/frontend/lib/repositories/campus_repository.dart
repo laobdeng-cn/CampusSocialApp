@@ -3,6 +3,7 @@ import '../models/campus_feed.dart';
 import '../models/campus_models.dart';
 import '../services/campus_api_client.dart';
 import 'auth_session.dart';
+import 'campus_event_bus.dart';
 
 class CampusRepository {
   CampusRepository({CampusApiClient? apiClient})
@@ -16,6 +17,17 @@ class CampusRepository {
   Set<String> _cachedFavoriteActivityIds = <String>{};
 
   CampusFeed get cachedFeed => _cachedFeed;
+
+  void _emitSync(CampusEventType type, {String refId = '', Object? payload}) {
+    CampusEventBus.instance.emit(
+      CampusDataEvent(type, refId: refId, payload: payload),
+    );
+  }
+
+  void _emitFeedChanged() {
+    _emitSync(CampusEventType.feedChanged);
+  }
+
 
   void _cacheFavoriteRecords(List<CampusFavoriteRecord> favorites) {
     _cachedFavoriteActivityIds = favorites
@@ -247,16 +259,22 @@ class CampusRepository {
 
   Future<CampusPost> togglePostLike(CampusPost post) async {
     final id = _requirePostId(post);
-    return _replaceCachedPost(
+    final next = _replaceCachedPost(
       await _apiClient.togglePostLike(token: _requireToken(), postId: id),
     );
+    _emitSync(CampusEventType.postChanged, refId: id, payload: next);
+    _emitFeedChanged();
+    return next;
   }
 
   Future<CampusPost> togglePostFavorite(CampusPost post) async {
     final id = _requirePostId(post);
-    return _replaceCachedPost(
+    final next = _replaceCachedPost(
       await _apiClient.togglePostFavorite(token: _requireToken(), postId: id),
     );
+    _emitSync(CampusEventType.postChanged, refId: id, payload: next);
+    _emitFeedChanged();
+    return next;
   }
 
   Future<({CampusComment comment, CampusPost post})> createComment({
@@ -282,14 +300,16 @@ class CampusRepository {
     return _apiClient.fetchMyComments(token: _requireToken());
   }
 
-  Future<void> deleteComment(CampusMyCommentRecord comment) {
+  Future<void> deleteComment(CampusMyCommentRecord comment) async {
     if (comment.id.isEmpty) {
       throw const CampusApiException('这条评论暂未同步到后端');
     }
-    return _apiClient.deleteComment(
+    await _apiClient.deleteComment(
       token: _requireToken(),
       commentId: comment.id,
     );
+    _emitSync(CampusEventType.postChanged, refId: comment.post.id);
+    _emitFeedChanged();
   }
 
   Future<CampusActivity> joinActivity(CampusActivity activity) async {
@@ -500,11 +520,14 @@ class CampusRepository {
     String text,
   ) async {
     final id = _requireActivityId(activity);
-    return _apiClient.createActivityComment(
+    final comment = await _apiClient.createActivityComment(
       token: _requireToken(),
       activityId: id,
       text: text,
     );
+    _emitSync(CampusEventType.activityCommentChanged, refId: id, payload: comment);
+    _emitSync(CampusEventType.notificationChanged);
+    return comment;
   }
 
   Future<void> deleteActivityComment(
@@ -517,6 +540,7 @@ class CampusRepository {
       activityId: id,
       commentId: comment.id,
     );
+    _emitSync(CampusEventType.activityCommentChanged, refId: id);
   }
 
   Future<List<CampusActivityEnrollment>> fetchActivityEnrollments(
@@ -669,28 +693,32 @@ class CampusRepository {
     );
   }
 
-  Future<void> markNotificationsRead() {
-    return _apiClient.markNotificationsRead(token: _requireToken());
+  Future<void> markNotificationsRead() async {
+    await _apiClient.markNotificationsRead(token: _requireToken());
+    _emitSync(CampusEventType.notificationChanged);
   }
 
-  Future<CampusNotificationRecord> markNotificationRead(String notificationId) {
+  Future<CampusNotificationRecord> markNotificationRead(String notificationId) async {
     if (notificationId.isEmpty) {
       throw const CampusApiException('这条通知暂未同步到后端');
     }
-    return _apiClient.markNotificationRead(
+    final next = await _apiClient.markNotificationRead(
       token: _requireToken(),
       notificationId: notificationId,
     );
+    _emitSync(CampusEventType.notificationChanged, refId: notificationId);
+    return next;
   }
 
-  Future<void> deleteNotification(String notificationId) {
+  Future<void> deleteNotification(String notificationId) async {
     if (notificationId.isEmpty) {
       throw const CampusApiException('这条通知暂未同步到后端');
     }
-    return _apiClient.deleteNotification(
+    await _apiClient.deleteNotification(
       token: _requireToken(),
       notificationId: notificationId,
     );
+    _emitSync(CampusEventType.notificationChanged, refId: notificationId);
   }
 
   Future<List<CampusConversation>> fetchConversations() {
@@ -1286,7 +1314,9 @@ class CampusRepository {
           .map((group) => group.copyWith(activities: remove(group.activities)))
           .toList(growable: false),
       topics: _cachedFeed.topics,
-    );
+    );    _emitSync(CampusEventType.activityChanged, refId: id);
+    _emitFeedChanged();
+
   }
 
   CampusGroup _replaceCachedGroup(CampusGroup nextGroup) {
@@ -1312,7 +1342,9 @@ class CampusRepository {
           .where((group) => group.id != groupId)
           .toList(growable: false),
       topics: _cachedFeed.topics,
-    );
+    );    _emitSync(CampusEventType.groupChanged, refId: id);
+    _emitFeedChanged();
+
   }
 
   String _requireToken() {

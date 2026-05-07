@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
 import '../models/campus_models.dart';
 import '../repositories/campus_repository.dart';
+import '../repositories/campus_event_bus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/campus_widgets.dart';
 
@@ -41,6 +43,7 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
   static const _sortTabs = ['推荐', '最新', '热门', '离我最近'];
 
   late Future<List<_ActivityItem>> _activitiesFuture;
+  StreamSubscription<CampusDataEvent>? _syncSubscription;
   late String _selectedCategory;
   var _selectedSort = '推荐';
   var _keyword = '';
@@ -51,10 +54,18 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
     super.initState();
     _selectedCategory = _normalizeInitialCategory(widget.initialCategory);
     _activitiesFuture = _loadActivities();
+    _syncSubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted) return;
+      if (event.type == CampusEventType.activityChanged ||
+          event.type == CampusEventType.feedChanged) {
+        _refreshActivities();
+      }
+    });
   }
 
   @override
   void dispose() {
+    _syncSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -494,12 +505,26 @@ class _MyRegisteredActivitiesScreenState
   static const _tabs = ['全部', '待签到', '已签到', '已结束'];
 
   late Future<List<CampusActivity>> _activitiesFuture;
+  StreamSubscription<CampusDataEvent>? _syncSubscription;
   var _selectedTab = '全部';
 
   @override
   void initState() {
     super.initState();
     _activitiesFuture = CampusRepository.instance.fetchMyActivities();
+    _syncSubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted) return;
+      if (event.type == CampusEventType.activityChanged ||
+          event.type == CampusEventType.feedChanged) {
+        _refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -8143,6 +8168,7 @@ class _ActivityImageUploadPreviewState
 
   @override
   void dispose() {
+    _commentSubscription?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -11114,12 +11140,26 @@ class _ActivityCommentSection extends StatefulWidget {
 class _ActivityCommentSectionState extends State<_ActivityCommentSection> {
   late Future<List<CampusComment>> _future;
   final _controller = TextEditingController();
+  StreamSubscription<CampusDataEvent>? _commentSubscription;
   var _isSending = false;
 
   @override
   void initState() {
     super.initState();
     _future = CampusRepository.instance.fetchActivityComments(widget.activity);
+    _commentSubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted) return;
+      if (event.matches(
+        CampusEventType.activityCommentChanged,
+        refId: widget.activity.id,
+      )) {
+        setState(() {
+          _future = CampusRepository.instance.fetchActivityComments(
+            widget.activity,
+          );
+        });
+      }
+    });
   }
 
   @override

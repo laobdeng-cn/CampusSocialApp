@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import '../models/campus_feed.dart';
 import '../models/campus_models.dart';
 import '../repositories/auth_session.dart';
 import '../repositories/campus_repository.dart';
+import '../repositories/campus_event_bus.dart';
 import '../theme/app_theme.dart';
 import '../widgets/campus_widgets.dart';
 import 'activity_feature_pages.dart';
@@ -9912,6 +9914,7 @@ class ActivityListCard extends StatefulWidget {
 
 class _ActivityListCardState extends State<ActivityListCard> {
   late CampusActivity _activity;
+  StreamSubscription<CampusDataEvent>? _syncSubscription;
   var _isFavoriting = false;
   var _isRegistered = false;
   var _isCheckingRegistration = false;
