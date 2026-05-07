@@ -9938,7 +9938,7 @@ class _ActivityListCardState extends State<ActivityListCard> {
         }
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncRegistrationState();
     });
   }

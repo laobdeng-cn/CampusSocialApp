@@ -44,7 +44,6 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
 
   late Future<List<_ActivityItem>> _activitiesFuture;
   StreamSubscription<CampusDataEvent>? _syncSubscription;
-  StreamSubscription<CampusDataEvent>? _syncSubscription;
   late String _selectedCategory;
   var _selectedSort = '推荐';
   var _keyword = '';
@@ -62,18 +61,10 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
         _refreshActivities();
       }
     });
-    _syncSubscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.activityChanged ||
-          event.type == CampusEventType.feedChanged) {
-        _refreshActivities();
-      }
-    });
-  }
+          }
 
   @override
   void dispose() {
-    _syncSubscription?.cancel();
     _syncSubscription?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -528,7 +519,7 @@ class _MyRegisteredActivitiesScreenState
         _refresh();
       }
     });
-  }
+      }
 
   @override
   void dispose() {
@@ -11168,7 +11159,7 @@ class _ActivityCommentSectionState extends State<_ActivityCommentSection> {
         });
       }
     });
-  }
+      }
 
   @override
   void didUpdateWidget(covariant _ActivityCommentSection oldWidget) {

@@ -28,7 +28,6 @@ class CampusRepository {
     _emitSync(CampusEventType.feedChanged);
   }
 
-
   void _emitSync(CampusEventType type, {String refId = '', Object? payload}) {
     CampusEventBus.instance.emit(
       CampusDataEvent(type, refId: refId, payload: payload),
@@ -38,7 +37,6 @@ class CampusRepository {
   void _emitFeedChanged() {
     _emitSync(CampusEventType.feedChanged);
   }
-
 
   void _cacheFavoriteRecords(List<CampusFavoriteRecord> favorites) {
     _cachedFavoriteActivityIds = favorites
@@ -551,7 +549,6 @@ class CampusRepository {
       activityId: id,
       commentId: comment.id,
     );
-    _emitSync(CampusEventType.activityCommentChanged, refId: id);
     _emitSync(CampusEventType.activityCommentChanged, refId: id);
   }
 
