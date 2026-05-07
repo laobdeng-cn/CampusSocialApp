@@ -9923,9 +9923,30 @@ class _ActivityListCardState extends State<ActivityListCard> {
   void initState() {
     super.initState();
     _activity = widget.activity;
+    _syncSubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted || _activity.id.isEmpty) return;
+      if (event.matches(CampusEventType.activityChanged, refId: _activity.id) ||
+          event.type == CampusEventType.feedChanged) {
+        for (final item in CampusRepository.instance.cachedFeed.activities) {
+          if (item.id == _activity.id) {
+            setState(() {
+              _activity = item;
+              _isRegistered = _realRegistered;
+            });
+            break;
+          }
+        }
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncRegistrationState();
     });
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
   }
 
   @override

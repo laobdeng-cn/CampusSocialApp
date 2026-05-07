@@ -1326,7 +1326,8 @@ class CampusRepository {
           .map((group) => group.copyWith(activities: remove(group.activities)))
           .toList(growable: false),
       topics: _cachedFeed.topics,
-    );    _emitSync(CampusEventType.activityChanged, refId: id);
+    );
+    _emitSync(CampusEventType.activityChanged, refId: activityId);
     _emitFeedChanged();
 
   }
@@ -1354,7 +1355,8 @@ class CampusRepository {
           .where((group) => group.id != groupId)
           .toList(growable: false),
       topics: _cachedFeed.topics,
-    );    _emitSync(CampusEventType.groupChanged, refId: id);
+    );
+    _emitSync(CampusEventType.groupChanged, refId: groupId);
     _emitFeedChanged();
 
   }

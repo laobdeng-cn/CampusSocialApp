@@ -8177,8 +8177,6 @@ class _ActivityImageUploadPreviewState
 
   @override
   void dispose() {
-    _commentSubscription?.cancel();
-    _commentSubscription?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -11184,6 +11182,7 @@ class _ActivityCommentSectionState extends State<_ActivityCommentSection> {
 
   @override
   void dispose() {
+    _commentSubscription?.cancel();
     _controller.dispose();
     super.dispose();
   }
