@@ -982,19 +982,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
             icon: const Icon(Icons.search),
           ),
           IconButton(
-            tooltip: '我管理的社群',
             onPressed: () async {
-              final changed = await Navigator.push<bool>(
+              final created = await Navigator.push<bool>(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const MyManagedGroupsScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const PublishPostScreen()),
               );
-              if (changed == true) {
+              if (created == true) {
                 await _refresh();
               }
             },
-            icon: const Icon(Icons.admin_panel_settings_outlined),
+            icon: const Icon(Icons.edit_square),
           ),
         ],
       ),
@@ -10512,9 +10509,7 @@ class _GroupTileState extends State<_GroupTile> {
   @override
   void initState() {
     super.initState();
-    _groupSubscription = CampusEventBus.instance.stream.listen(
-      _syncFromCachedGroup,
-    );
+    _groupSubscription = CampusEventBus.instance.stream.listen(_syncFromCachedGroup);
   }
 
   @override

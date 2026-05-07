@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -6,6 +8,7 @@ import '../models/campus_feed.dart';
 import '../models/campus_models.dart';
 import '../repositories/auth_session.dart';
 import '../repositories/campus_repository.dart';
+import '../repositories/campus_event_bus.dart';
 import 'activity_feature_pages.dart';
 import '../theme/app_theme.dart';
 import '../widgets/campus_widgets.dart';
@@ -1665,12 +1668,16 @@ class GroupDetailScreen extends StatefulWidget {
 
 class _GroupDetailScreenState extends State<GroupDetailScreen> {
   late CampusGroup _group = widget.group;
+  StreamSubscription<CampusDataEvent>? _groupSubscription;
   var _isLoading = false;
   var _isSubmitting = false;
+  var _isReloadingFromEvent = false;
 
   @override
   void initState() {
     super.initState();
+    _groupSubscription = CampusEventBus.instance.stream.listen(_onGroupEvent);
+
     Future<void>(() {
       return CampusRepository.instance.recordHistory(
         kind: 'group',
@@ -1680,19 +1687,73 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         imageUrl: _group.iconUrl,
       );
     }).catchError((_) {});
+
     _loadDetail();
   }
 
-  Future<void> _loadDetail() async {
+  @override
+  void didUpdateWidget(covariant GroupDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.group.id != widget.group.id ||
+        oldWidget.group.joined != widget.group.joined ||
+        oldWidget.group.membershipStatus != widget.group.membershipStatus ||
+        oldWidget.group.members != widget.group.members) {
+      _group = widget.group;
+      _loadDetail(showLoading: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _groupSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _onGroupEvent(CampusDataEvent event) {
+    if (!mounted) return;
+
+    final groupId = _group.id;
+    if (groupId.isEmpty) return;
+
+    final isCurrentGroupEvent = event.matches(
+      CampusEventType.groupChanged,
+      refId: groupId,
+    );
+
+    if (!isCurrentGroupEvent) return;
+
+    final payload = event.payload;
+    if (payload is CampusGroup && payload.id == groupId) {
+      setState(() => _group = payload);
+    }
+
+    _loadDetail(showLoading: false);
+  }
+
+  Future<void> _loadDetail({bool showLoading = true}) async {
     if (_group.id.isEmpty) return;
-    setState(() => _isLoading = true);
+    if (_isReloadingFromEvent && !showLoading) return;
+
+    if (showLoading && mounted) {
+      setState(() => _isLoading = true);
+    }
+
+    if (!showLoading) {
+      _isReloadingFromEvent = true;
+    }
+
     try {
       final group = await CampusRepository.instance.fetchGroupDetail(_group);
       if (mounted) setState(() => _group = group);
     } catch (_) {
       // The screen can still render the feed copy if detail loading fails.
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (!showLoading) {
+        _isReloadingFromEvent = false;
+      }
+      if (mounted && showLoading) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -1705,10 +1766,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           : await CampusRepository.instance.joinGroup(_group);
       if (!mounted) return;
       setState(() => _group = group);
-      _showMessage(
-        context,
-        group.joined ? '已加入 ${group.name}' : '已退出 ${group.name}',
-      );
+      if (group.membershipStatus == 'pending') {
+        _showMessage(context, '入群申请已提交，等待管理员审核');
+      } else {
+        _showMessage(
+          context,
+          group.joined ? '已加入 ${group.name}' : '已退出 ${group.name}',
+        );
+      }
     } catch (error) {
       if (mounted) _showMessage(context, _friendlyError(error));
     } finally {

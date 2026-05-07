@@ -813,6 +813,12 @@ class CampusRepository {
       groups: [enriched, ..._cachedFeed.groups],
       topics: _cachedFeed.topics,
     );
+    _emitSync(
+      CampusEventType.groupChanged,
+      refId: enriched.id,
+      payload: enriched,
+    );
+    _emitFeedChanged();
     return enriched;
   }
 
@@ -966,49 +972,66 @@ class CampusRepository {
     required CampusGroup group,
     required CampusGroupMember request,
     required bool approved,
-  }) {
+  }) async {
     final groupId = _requireGroupId(group);
     if (request.id.isEmpty) {
       throw const CampusApiException('这条申请暂未同步到后端');
     }
-    return _apiClient.reviewGroupJoinRequest(
+
+    final member = await _apiClient.reviewGroupJoinRequest(
       token: _requireToken(),
       groupId: groupId,
       membershipId: request.id,
       approved: approved,
     );
+
+    _emitSync(CampusEventType.groupChanged, refId: groupId);
+    _emitSync(CampusEventType.notificationChanged);
+    _emitFeedChanged();
+
+    return member;
   }
 
   Future<CampusGroupMember> updateGroupMemberRole({
     required CampusGroup group,
     required CampusGroupMember member,
     required String role,
-  }) {
+  }) async {
     final groupId = _requireGroupId(group);
     if (member.id.isEmpty) {
       throw const CampusApiException('这位成员暂未同步到后端');
     }
-    return _apiClient.updateGroupMemberRole(
+
+    final nextMember = await _apiClient.updateGroupMemberRole(
       token: _requireToken(),
       groupId: groupId,
       membershipId: member.id,
       role: role,
     );
+
+    _emitSync(CampusEventType.groupChanged, refId: groupId);
+    _emitFeedChanged();
+
+    return nextMember;
   }
 
   Future<void> removeGroupMember({
     required CampusGroup group,
     required CampusGroupMember member,
-  }) {
+  }) async {
     final groupId = _requireGroupId(group);
     if (member.id.isEmpty) {
       throw const CampusApiException('这位成员暂未同步到后端');
     }
-    return _apiClient.removeGroupMember(
+
+    await _apiClient.removeGroupMember(
       token: _requireToken(),
       groupId: groupId,
       membershipId: member.id,
     );
+
+    _emitSync(CampusEventType.groupChanged, refId: groupId);
+    _emitFeedChanged();
   }
 
   Future<CampusTopic> fetchTopicDetail(CampusTopic topic) async {
@@ -1332,6 +1355,18 @@ class CampusRepository {
           .toList(growable: false),
       topics: _cachedFeed.topics,
     );
+
+    if (enriched.id.isNotEmpty) {
+      _emitSync(
+        CampusEventType.groupChanged,
+        refId: enriched.id,
+        payload: enriched,
+      );
+    } else {
+      _emitSync(CampusEventType.groupChanged, payload: enriched);
+    }
+    _emitFeedChanged();
+
     return enriched;
   }
 
