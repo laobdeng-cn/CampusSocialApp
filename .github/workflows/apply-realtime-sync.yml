@@ -1,0 +1,41 @@
+name: Apply realtime sync patch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/apply_realtime_sync_patch.py
+      - .github/workflows/apply-realtime-sync.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply patch
+        run: python3 tools/apply_realtime_sync_patch.py
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git add frontend/frontend/lib/repositories/campus_event_bus.dart \
+              frontend/frontend/lib/repositories/campus_repository.dart \
+              frontend/frontend/lib/screens/activity_feature_pages.dart \
+              frontend/frontend/lib/screens/main_shell.dart
+            git commit -m "fix realtime sync for interactions"
+            git push origin main
+          else
+            echo "No changes to commit."
+          fi
