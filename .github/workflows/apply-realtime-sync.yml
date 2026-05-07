@@ -39,3 +39,5 @@ jobs:
           else
             echo "No changes to commit."
           fi
+
+# trigger: realtime-sync-v1
