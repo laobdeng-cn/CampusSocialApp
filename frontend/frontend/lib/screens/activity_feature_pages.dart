@@ -4854,6 +4854,42 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     return _stageImage;
   }
 
+  void _syncPosterFromImages() {
+    _posterPreviewUrl = _activityImageUrls.isNotEmpty
+        ? _activityImageUrls.first
+        : '';
+    _posterController.text = _posterPreviewUrl;
+  }
+
+  void _removeActivityImage(String url) {
+    final target = url.trim();
+    if (target.isEmpty) return;
+
+    setState(() {
+      _activityImageUrls = _activityImageUrls
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty && item != target)
+          .toSet()
+          .toList();
+      _syncPosterFromImages();
+    });
+  }
+
+  void _setActivityCover(String url) {
+    final target = url.trim();
+    if (target.isEmpty) return;
+
+    setState(() {
+      final rest = _activityImageUrls
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty && item != target)
+          .toSet()
+          .toList();
+      _activityImageUrls = [target, ...rest];
+      _syncPosterFromImages();
+    });
+  }
+
   List<String> _imageUrlsForSubmit(String posterUrl) {
     final urls = _activityImageUrls
         .map((url) => url.trim())
@@ -5008,6 +5044,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                   images: _activityImageUrls,
                   fallbackUrl: _posterController.text.trim(),
                   onUpload: _pickPoster,
+                  onRemove: _removeActivityImage,
+                  onSetCover: _setActivityCover,
                 ),
               ),
             ),
@@ -8043,11 +8081,15 @@ class _ActivityImageUploadPreview extends StatefulWidget {
     required this.images,
     required this.fallbackUrl,
     required this.onUpload,
+    this.onRemove,
+    this.onSetCover,
   });
 
   final List<String> images;
   final String fallbackUrl;
   final VoidCallback onUpload;
+  final ValueChanged<String>? onRemove;
+  final ValueChanged<String>? onSetCover;
 
   @override
   State<_ActivityImageUploadPreview> createState() =>
@@ -8056,142 +8098,285 @@ class _ActivityImageUploadPreview extends StatefulWidget {
 
 class _ActivityImageUploadPreviewState
     extends State<_ActivityImageUploadPreview> {
-  final _pageController = PageController();
+  late final PageController _controller;
   var _index = 0;
 
-  List<String> get _visibleImages => <String>[
-    ...widget.images,
-    if (widget.fallbackUrl.trim().isNotEmpty) widget.fallbackUrl.trim(),
-  ].where((url) => url.trim().isNotEmpty).toSet().toList();
+  List<String> get _images {
+    final values = widget.images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+
+    if (values.isNotEmpty) return values;
+
+    final fallback = widget.fallbackUrl.trim();
+    if (fallback.isNotEmpty) return [fallback];
+
+    return const <String>[];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityImageUploadPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final images = _images;
+    if (images.isEmpty) {
+      if (_index != 0) setState(() => _index = 0);
+      return;
+    }
+
+    if (_index >= images.length) {
+      _index = images.length - 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controller.hasClients) {
+          _controller.jumpToPage(_index);
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
-  Widget _image(String url) {
-    final path = url.startsWith('file://')
-        ? url.replaceFirst('file://', '')
-        : url;
-    final local =
-        path.startsWith('/') &&
-        !path.startsWith('/uploads') &&
-        !path.startsWith('/api');
-    if (local) {
-      return Image.file(
-        File(path),
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => SmartImage(
-          url: url,
-          width: double.infinity,
-          height: double.infinity,
-          borderRadius: 20,
-        ),
-      );
-    }
-    return SmartImage(
-      url: url,
-      width: double.infinity,
-      height: double.infinity,
-      borderRadius: 20,
-    );
+  void _setAsCover(String url) {
+    widget.onSetCover?.call(url);
+    setState(() => _index = 0);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _controller.hasClients) {
+        _controller.animateToPage(
+          0,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final images = _visibleImages;
+    final images = _images;
+
     if (images.isEmpty) {
       return SizedBox(
-        height: 96,
-        child: Center(
-          child: TextButton.icon(
-            onPressed: widget.onUpload,
-            icon: const Icon(Icons.cloud_upload_rounded, size: 22),
-            label: const Text('点击上传'),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.blue,
-              textStyle: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
+        height: 150,
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: widget.onUpload,
+          icon: const Icon(Icons.cloud_upload_rounded),
+          label: const Text(
+            '点击上传',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF1A73E8),
+            side: const BorderSide(color: Color(0xFFE5ECF6)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
             ),
           ),
         ),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: images.length,
-              onPageChanged: (value) => setState(() => _index = value),
-              itemBuilder: (context, index) => _image(images[index]),
-            ),
-            Positioned(
-              right: 12,
-              bottom: 12,
-              child: GestureDetector(
-                onTap: widget.onUpload,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.48),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
+
+    final safeIndex = _index.clamp(0, images.length - 1);
+    final current = images[safeIndex];
+    final firstImage = images.first;
+    final isCover = current == firstImage;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final fallbackWidth = MediaQuery.sizeOf(context).width - 56;
+            final width =
+                (constraints.hasBoundedWidth && constraints.maxWidth.isFinite)
+                ? constraints.maxWidth
+                : fallbackWidth;
+            final height = (width / 1.78).clamp(160.0, 245.0);
+
+            return Center(
+              child: SizedBox(
+                width: width,
+                height: height,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
                     children: [
-                      Icon(Icons.image_rounded, size: 16, color: Colors.white),
-                      SizedBox(width: 5),
-                      Text(
-                        '继续上传',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                      PageView.builder(
+                        controller: _controller,
+                        itemCount: images.length,
+                        onPageChanged: (value) =>
+                            setState(() => _index = value),
+                        itemBuilder: (context, index) {
+                          return _ActivityImageView(
+                            url: images[index],
+                            fit: BoxFit.cover,
+                          );
+                        },
+                      ),
+                      Positioned(
+                        left: 10,
+                        top: 10,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: isCover
+                                ? const Color(0xFF1677FF)
+                                : Colors.black54,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            child: Text(
+                              isCover ? '封面' : '第 ${safeIndex + 1} 张',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
+                      Positioned(
+                        right: 10,
+                        top: 10,
+                        child: Row(
+                          children: [
+                            IconButton(
+                              tooltip: '继续上传',
+                              onPressed: widget.onUpload,
+                              icon: const Icon(
+                                Icons.add_photo_alternate_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.black54,
+                                fixedSize: const Size(38, 38),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (widget.onRemove != null)
+                              IconButton(
+                                tooltip: '删除图片',
+                                onPressed: () => widget.onRemove?.call(current),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                                style: IconButton.styleFrom(
+                                  backgroundColor: const Color(0xCCEF4444),
+                                  fixedSize: const Size(38, 38),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (images.length > 1)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 10,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(images.length, (dotIndex) {
+                              final active = dotIndex == safeIndex;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 3,
+                                ),
+                                width: active ? 18 : 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: active ? Colors.white : Colors.white60,
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
                     ],
                   ),
                 ),
               ),
-            ),
-            if (images.length > 1)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 12,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var i = 0; i < images.length; i++)
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: i == _index ? 16 : 6,
-                        height: 6,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(
-                            i == _index ? 0.95 : 0.55,
-                          ),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                      ),
-                  ],
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: isCover || widget.onSetCover == null
+                    ? null
+                    : () => _setAsCover(current),
+                icon: Icon(
+                  isCover ? Icons.verified_rounded : Icons.push_pin_rounded,
+                  size: 18,
+                ),
+                label: Text(isCover ? '当前封面' : '设为封面'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isCover
+                      ? const Color(0xFF16A34A)
+                      : const Color(0xFF1677FF),
+                  side: BorderSide(
+                    color: isCover
+                        ? const Color(0xFFDDFBEA)
+                        : const Color(0xFFD7E8FF),
+                  ),
+                  backgroundColor: isCover
+                      ? const Color(0xFFF0FDF4)
+                      : const Color(0xFFF6FAFF),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: widget.onUpload,
+                icon: const Icon(Icons.cloud_upload_rounded, size: 18),
+                label: const Text('继续上传'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF1677FF),
+                  side: const BorderSide(color: Color(0xFFD7E8FF)),
+                  backgroundColor: const Color(0xFFF6FAFF),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          '共 ${images.length} 张图片，第一张会作为活动封面',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF8A95A8),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -8206,73 +8391,151 @@ class _ActivityImageCarousel extends StatefulWidget {
 }
 
 class _ActivityImageCarouselState extends State<_ActivityImageCarousel> {
-  final _pageController = PageController();
+  late final PageController _controller;
   var _index = 0;
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final images = widget.images
+  List<String> get _images {
+    final values = widget.images
         .map((url) => url.trim())
         .where((url) => url.isNotEmpty)
         .toSet()
         .toList();
-    debugPrint('detail activity images => ${images.length}: $images');
+    return values.isEmpty ? const [_stageImage] : values;
+  }
 
-    if (images.isEmpty) return const SizedBox.shrink();
+  @override
+  void initState() {
+    super.initState();
+    _controller = PageController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ActivityImageCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final images = _images;
+    if (_index >= images.length) {
+      _index = images.length - 1;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _controller.hasClients) {
+          _controller.jumpToPage(_index);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _openPreview(int initialIndex) {
+    final images = _images;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _ActivityFullscreenGallery(
+          images: images,
+          initialIndex: initialIndex.clamp(0, images.length - 1),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = _images;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 轮播有时会被放进 Row 里，Row 给子组件的是横向不受限约束。
-        // 原来的 AspectRatio 在 unconstrained 宽度下会直接抛 RenderAspectRatio 未布局错误。
-        // 这里给 Row 场景一个固定尺寸；详情页 Column 场景仍然铺满可用宽度。
-        final hasBoundedWidth =
-            constraints.maxWidth.isFinite && constraints.maxWidth > 0;
-        final width = hasBoundedWidth ? constraints.maxWidth : 118.0;
-        final height = hasBoundedWidth ? width / 1.8 : 86.0;
+        final width = constraints.hasBoundedWidth
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width - 32;
+        final height = (width / 1.78).clamp(190.0, 280.0);
 
         return SizedBox(
-          width: width,
+          width: double.infinity,
           height: height,
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(hasBoundedWidth ? 22 : 18),
+            borderRadius: BorderRadius.circular(18),
             child: Stack(
-              fit: StackFit.expand,
               children: [
                 PageView.builder(
-                  controller: _pageController,
+                  controller: _controller,
                   itemCount: images.length,
                   onPageChanged: (value) => setState(() => _index = value),
                   itemBuilder: (context, index) {
-                    return SmartImage(
-                      url: images[index],
-                      width: double.infinity,
-                      height: double.infinity,
-                      borderRadius: hasBoundedWidth ? 22 : 18,
+                    final imageUrl = images[index];
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _openPreview(index),
+                      child: _ActivityImageView(
+                        url: imageUrl,
+                        fit: BoxFit.cover,
+                      ),
                     );
                   },
                 ),
-                if (images.length > 1 && hasBoundedWidth)
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: Container(
+                Positioned(
+                  right: 12,
+                  top: 12,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.46),
-                        borderRadius: BorderRadius.circular(999),
+                        vertical: 6,
                       ),
                       child: Text(
                         '${_index + 1}/${images.length}',
                         style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(images.length, (dotIndex) {
+                      final active = dotIndex == _index;
+                      return AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: active ? 18 : 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: active ? Colors.white : Colors.white54,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                const Positioned(
+                  left: 12,
+                  bottom: 12,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.all(Radius.circular(999)),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        '点击预览',
+                        style: TextStyle(
                           color: Colors.white,
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -8280,35 +8543,208 @@ class _ActivityImageCarouselState extends State<_ActivityImageCarousel> {
                       ),
                     ),
                   ),
-                if (images.length > 1)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: hasBoundedWidth ? 12 : 6,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < images.length; i++)
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: i == _index ? 16 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(
-                                i == _index ? 0.95 : 0.55,
-                              ),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
+                ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+class _ActivityFullscreenGallery extends StatefulWidget {
+  const _ActivityFullscreenGallery({
+    required this.images,
+    required this.initialIndex,
+  });
+
+  final List<String> images;
+  final int initialIndex;
+
+  @override
+  State<_ActivityFullscreenGallery> createState() =>
+      _ActivityFullscreenGalleryState();
+}
+
+class _ActivityFullscreenGalleryState
+    extends State<_ActivityFullscreenGallery> {
+  late final PageController _controller;
+  late int _index;
+
+  List<String> get _images {
+    final values = widget.images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    return values.isEmpty ? const [_stageImage] : values;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final images = _images;
+    _index = widget.initialIndex.clamp(0, images.length - 1);
+    _controller = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = _images;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              itemCount: images.length,
+              onPageChanged: (value) => setState(() => _index = value),
+              itemBuilder: (context, index) {
+                return InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Center(
+                    child: _ActivityImageView(
+                      url: images[index],
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                );
+              },
+            ),
+            Positioned(
+              top: 12,
+              left: 12,
+              child: IconButton(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.black54,
+                  fixedSize: const Size(42, 42),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 18,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
+                    child: Text(
+                      '${_index + 1}/${images.length}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 24,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(images.length, (dotIndex) {
+                  final active = dotIndex == _index;
+                  return AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: active ? 22 : 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: active ? Colors.white : Colors.white38,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityImageView extends StatelessWidget {
+  const _ActivityImageView({required this.url, required this.fit});
+
+  final String url;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = url.trim();
+
+    if (source.startsWith('asset:')) {
+      final assetPath = source.substring('asset:'.length);
+      return Image.asset(
+        assetPath,
+        width: double.infinity,
+        height: double.infinity,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+      );
+    }
+
+    if (source.startsWith('http://') || source.startsWith('https://')) {
+      return Image.network(
+        source,
+        width: double.infinity,
+        height: double.infinity,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+      );
+    }
+
+    if (source.isNotEmpty) {
+      return Image.file(
+        File(source),
+        width: double.infinity,
+        height: double.infinity,
+        fit: fit,
+        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+      );
+    }
+
+    return const _ActivityImagePlaceholder();
+  }
+}
+
+class _ActivityImagePlaceholder extends StatelessWidget {
+  const _ActivityImagePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF1F5F9),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        color: Color(0xFF94A3B8),
+        size: 42,
+      ),
     );
   }
 }
@@ -8862,8 +9298,21 @@ class _EnrollmentUserCard extends StatelessWidget {
 
   final CampusActivityEnrollment enrollment;
 
+  bool get _checkedIn =>
+      enrollment.checkedIn ||
+      enrollment.status == 'checked_in' ||
+      enrollment.checkInStatus == 'checked_in';
+
+  String get _statusLabel => _checkedIn ? '已签到' : '未签到';
+
+  Color get _statusColor => _checkedIn ? AppColors.green : AppColors.orange;
+
   @override
   Widget build(BuildContext context) {
+    final timeText = _checkedIn && enrollment.checkedAt.isNotEmpty
+        ? '签到 ${_friendlyFeatureTime(enrollment.checkedAt)}'
+        : '报名 ${_friendlyFeatureTime(enrollment.createdAt)}';
+
     return CampusCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
@@ -8876,23 +9325,54 @@ class _EnrollmentUserCard extends StatelessWidget {
               children: [
                 Text(
                   enrollment.user.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.ink,
                     fontSize: 17,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 5),
                 Text(
                   '${enrollment.user.school} · ${enrollment.user.grade}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  timeText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
             ),
           ),
-          Text(
-            _friendlyFeatureTime(enrollment.createdAt),
-            style: const TextStyle(color: AppColors.muted, fontSize: 13),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: _statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              _statusLabel,
+              style: TextStyle(
+                color: _statusColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
           ),
         ],
       ),
@@ -9169,19 +9649,19 @@ class _RealCreatedOverviewItem extends StatelessWidget {
 class _RealCreatedActivityCard extends StatelessWidget {
   const _RealCreatedActivityCard({
     required this.activity,
-    required this.onTap,
-    required this.onRoster,
-    required this.onResetCode,
-    required this.onEdit,
-    required this.onDelete,
+    this.onTap,
+    this.onRoster,
+    this.onResetCode,
+    this.onEdit,
+    this.onDelete,
   });
 
   final CampusActivity activity;
-  final VoidCallback onTap;
-  final VoidCallback onRoster;
-  final VoidCallback onResetCode;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback? onTap;
+  final VoidCallback? onRoster;
+  final VoidCallback? onResetCode;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
 
   double get _progress {
     if (activity.capacity <= 0) return 0;
@@ -9190,70 +9670,89 @@ class _RealCreatedActivityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusColor = _checkInStatusColor(activity);
+    final imageUrl = activity.images.isNotEmpty
+        ? activity.images.first
+        : activity.posterUrl;
+    final isFull =
+        activity.capacity > 0 && activity.enrolled >= activity.capacity;
+    final statusText = activity.isEnded
+        ? '已结束'
+        : isFull
+        ? '已满员'
+        : '进行中';
+    final statusForeground = activity.isEnded
+        ? AppColors.muted
+        : isFull
+        ? AppColors.orange
+        : AppColors.green;
+    final statusBackground = activity.isEnded
+        ? const Color(0xFFF4F7FB)
+        : isFull
+        ? const Color(0xFFFFF7E8)
+        : const Color(0xFFEAFBF1);
+    final enrolledText = '${activity.enrolled}/${activity.capacity}';
 
     return CampusCard(
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
       child: InkWell(
         borderRadius: BorderRadius.circular(22),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _ActivityImageCarousel(
-                    images: activity.images.isNotEmpty
-                        ? activity.images
-                        : [activity.posterUrl],
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SmartImage(
+                  url: imageUrl,
+                  width: 132,
+                  height: 104,
+                  borderRadius: 14,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 104,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
                           children: [
-                            _RealCreatedStatusPill(
-                              label: _checkInStatusLabel(activity),
-                              color: statusColor,
+                            _RealCreatedSmallBadge(
+                              text: statusText,
+                              foreground: statusForeground,
+                              background: statusBackground,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                activity.category,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.muted,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
+                            _RealCreatedSmallBadge(
+                              text: activity.category,
+                              foreground: AppColors.muted,
+                              background: const Color(0xFFF4F7FB),
                             ),
                           ],
                         ),
                         const SizedBox(height: 8),
                         Text(
                           activity.title,
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: AppColors.ink,
-                            fontSize: 19,
+                            fontSize: 18,
+                            height: 1.15,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const Spacer(),
                         Text(
                           '${activity.date} · ${activity.time}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: AppColors.text,
+                            color: AppColors.ink,
                             fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -9264,69 +9763,152 @@ class _RealCreatedActivityCard extends StatelessWidget {
                           style: const TextStyle(
                             color: AppColors.muted,
                             fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: _progress,
-                        minHeight: 7,
-                        backgroundColor: const Color(0xFFEAF1FF),
-                        color: AppColors.green,
-                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      value: _progress,
+                      minHeight: 7,
+                      backgroundColor: const Color(0xFFEAF1FF),
+                      color: const Color(0xFF24D17E),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    '${activity.enrolled}/${activity.capacity}',
-                    style: const TextStyle(
-                      color: AppColors.blue,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _RealCreatedActionButton(
-                    label: '报名名单',
-                    icon: Icons.people_alt_rounded,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  enrolledText,
+                  style: const TextStyle(
                     color: AppColors.blue,
-                    onTap: onRoster,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
-                  _RealCreatedActionButton(
-                    label: '重置口令',
-                    icon: Icons.lock_reset_rounded,
-                    color: AppColors.orange,
-                    onTap: onResetCode,
-                  ),
-                  _RealCreatedActionButton(
-                    label: '编辑',
-                    icon: Icons.edit_rounded,
-                    color: AppColors.green,
-                    onTap: onEdit,
-                  ),
-                  _RealCreatedActionButton(
-                    label: '删除',
-                    icon: Icons.delete_outline_rounded,
-                    color: AppColors.red,
-                    onTap: onDelete,
-                  ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _RealCreatedActionChip(
+                  icon: Icons.groups_rounded,
+                  label: '报名名单',
+                  foreground: AppColors.blue,
+                  background: const Color(0xFFEAF3FF),
+                  onTap: onRoster,
+                ),
+                _RealCreatedActionChip(
+                  icon: Icons.history_rounded,
+                  label: '重置口令',
+                  foreground: const Color(0xFFF59E0B),
+                  background: const Color(0xFFFFF7E8),
+                  onTap: onResetCode,
+                ),
+                _RealCreatedActionChip(
+                  icon: Icons.edit_rounded,
+                  label: '编辑',
+                  foreground: const Color(0xFF16A34A),
+                  background: const Color(0xFFEAFBF1),
+                  onTap: onEdit,
+                ),
+                _RealCreatedActionChip(
+                  icon: Icons.delete_outline_rounded,
+                  label: '删除',
+                  foreground: const Color(0xFFEF4444),
+                  background: const Color(0xFFFFEDEF),
+                  onTap: onDelete,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RealCreatedSmallBadge extends StatelessWidget {
+  const _RealCreatedSmallBadge({
+    required this.text,
+    required this.foreground,
+    required this.background,
+  });
+
+  final String text;
+  final Color foreground;
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: foreground,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RealCreatedActionChip extends StatelessWidget {
+  const _RealCreatedActionChip({
+    required this.icon,
+    required this.label,
+    required this.foreground,
+    required this.background,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color foreground;
+  final Color background;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: foreground),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ],
           ),
@@ -9406,32 +9988,97 @@ class _RealCreatedActionButton extends StatelessWidget {
   }
 }
 
-class _RealCreatedRosterSheet extends StatelessWidget {
+class _RealCreatedRosterSheet extends StatefulWidget {
   const _RealCreatedRosterSheet({required this.activity});
 
   final CampusActivity activity;
 
-  String _statusLabel(String value) {
-    return switch (value) {
-      'checked_in' => '已签到',
-      'cancelled' => '已取消',
-      _ => '已报名',
-    };
+  @override
+  State<_RealCreatedRosterSheet> createState() =>
+      _RealCreatedRosterSheetState();
+}
+
+class _RealCreatedRosterSheetState extends State<_RealCreatedRosterSheet> {
+  late Future<List<CampusActivityEnrollment>> _future;
+  final _searchController = TextEditingController();
+  String _keyword = '';
+
+  CampusActivity get activity => widget.activity;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = CampusRepository.instance.fetchActivityEnrollments(activity);
+    _searchController.addListener(() {
+      final next = _searchController.text.trim();
+      if (next == _keyword) return;
+      setState(() => _keyword = next);
+    });
   }
 
-  Color _statusColor(String value) {
-    return switch (value) {
-      'checked_in' => AppColors.green,
-      'cancelled' => AppColors.red,
-      _ => AppColors.blue,
-    };
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refresh() async {
+    final future = CampusRepository.instance.fetchActivityEnrollments(activity);
+    setState(() => _future = future);
+    await future;
+  }
+
+  bool _isCheckedIn(CampusActivityEnrollment item) {
+    return item.checkedIn ||
+        item.status == 'checked_in' ||
+        item.checkInStatus == 'checked_in';
+  }
+
+  String _activityStatusLabel() {
+    if (activity.isEnded) return '已结束';
+    if (activity.capacity > 0 && activity.enrolled >= activity.capacity)
+      return '已满员';
+    return '进行中';
+  }
+
+  Color _activityStatusColor() {
+    if (activity.isEnded) return AppColors.muted;
+    if (activity.capacity > 0 && activity.enrolled >= activity.capacity)
+      return AppColors.orange;
+    return AppColors.green;
+  }
+
+  List<CampusActivityEnrollment> _filtered(
+    List<CampusActivityEnrollment> items,
+  ) {
+    final keyword = _keyword.toLowerCase();
+    if (keyword.isEmpty) return items;
+
+    return items
+        .where((item) {
+          final checkedLabel = _isCheckedIn(item)
+              ? '已签到 checked in'
+              : '未签到 not checked';
+          final content = [
+            item.user.name,
+            item.user.school,
+            item.user.grade,
+            item.user.major,
+            item.status,
+            item.checkInStatus,
+            checkedLabel,
+          ].join(' ').toLowerCase();
+
+          return content.contains(keyword);
+        })
+        .toList(growable: false);
   }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.78,
+        maxHeight: MediaQuery.of(context).size.height * 0.84,
       ),
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -9440,136 +10087,277 @@ class _RealCreatedRosterSheet extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: FutureBuilder<List<CampusActivityEnrollment>>(
-          future: CampusRepository.instance.fetchActivityEnrollments(activity),
+          future: _future,
           builder: (context, snapshot) {
             final items = snapshot.data ?? const <CampusActivityEnrollment>[];
+            final visibleItems = _filtered(items);
+            final checkedInCount = items.where(_isCheckedIn).length;
+            final notCheckedInCount = (items.length - checkedInCount).clamp(
+              0,
+              items.length,
+            );
+            final remaining = activity.capacity > 0
+                ? (activity.capacity - items.length).clamp(0, activity.capacity)
+                : 0;
             final isLoading =
                 snapshot.connectionState == ConnectionState.waiting &&
                 items.isEmpty;
             final hasError = snapshot.hasError && items.isEmpty;
 
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD8DEE8),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '报名名单 · ${activity.title}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.ink,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                        ),
+            return RefreshIndicator(
+              color: AppColors.blue,
+              onRefresh: _refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD8DEE8),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (isLoading)
-                  const _RealCreatedStateCard(
-                    icon: Icons.hourglass_top_rounded,
-                    title: '正在加载报名名单',
-                    subtitle: '请稍候',
-                    showLoading: true,
-                  )
-                else if (hasError)
-                  _RealCreatedStateCard(
-                    icon: Icons.wifi_off_rounded,
-                    title: '加载失败',
-                    subtitle: _featureError(snapshot.error!),
-                  )
-                else if (items.isEmpty)
-                  const _RealCreatedStateCard(
-                    icon: Icons.people_outline_rounded,
-                    title: '暂无报名人员',
-                    subtitle: '活动发布后，报名用户会显示在这里。',
-                  )
-                else
-                  for (final item in items)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: CampusCard(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '报名名单 · ${activity.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.ink,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '刷新',
+                        onPressed: _refresh,
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
+                      IconButton(
+                        tooltip: '关闭',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  CampusCard(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           children: [
-                            CircleAvatar(
-                              radius: 22,
-                              backgroundImage: NetworkImage(
-                                item.user.avatarUrl,
-                              ),
+                            _RosterStatusPill(
+                              label: _activityStatusLabel(),
+                              color: _activityStatusColor(),
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.user.name,
-                                    style: const TextStyle(
-                                      color: AppColors.ink,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '${item.user.school} · ${item.createdAt}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: AppColors.muted,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 9,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _statusColor(
-                                  item.status,
-                                ).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
                               child: Text(
-                                _statusLabel(item.status),
-                                style: TextStyle(
-                                  color: _statusColor(item.status),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w900,
+                                '${activity.date} · ${activity.time}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
                           ],
                         ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _RosterStatChip(
+                              label: '总报名',
+                              value: '${items.length}',
+                              icon: Icons.groups_rounded,
+                              color: AppColors.blue,
+                            ),
+                            _RosterStatChip(
+                              label: '已签到',
+                              value: '$checkedInCount',
+                              icon: Icons.verified_rounded,
+                              color: AppColors.green,
+                            ),
+                            _RosterStatChip(
+                              label: '未签到',
+                              value: '$notCheckedInCount',
+                              icon: Icons.pending_actions_rounded,
+                              color: AppColors.orange,
+                            ),
+                            _RosterStatChip(
+                              label: '剩余名额',
+                              value: '$remaining',
+                              icon: Icons.confirmation_number_rounded,
+                              color: AppColors.purple,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: '搜索姓名、学校、年级、签到状态',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: _keyword.isEmpty
+                          ? null
+                          : IconButton(
+                              onPressed: _searchController.clear,
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 13,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFFE5ECF6)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: Color(0xFFE5ECF6)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(18),
+                        borderSide: const BorderSide(color: AppColors.blue),
                       ),
                     ),
-              ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (isLoading)
+                    const _RealCreatedStateCard(
+                      icon: Icons.hourglass_top_rounded,
+                      title: '正在加载报名名单',
+                      subtitle: '请稍候',
+                      showLoading: true,
+                    )
+                  else if (hasError)
+                    _RealCreatedStateCard(
+                      icon: Icons.wifi_off_rounded,
+                      title: '加载失败',
+                      subtitle: _featureError(snapshot.error!),
+                    )
+                  else if (items.isEmpty)
+                    const _RealCreatedStateCard(
+                      icon: Icons.people_outline_rounded,
+                      title: '暂无报名人员',
+                      subtitle: '活动发布后，报名用户会显示在这里。',
+                    )
+                  else if (visibleItems.isEmpty)
+                    const _RealCreatedStateCard(
+                      icon: Icons.search_off_rounded,
+                      title: '没有匹配结果',
+                      subtitle: '换个关键词试试，例如姓名、学校或“已签到”。',
+                    )
+                  else
+                    for (final item in visibleItems)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _EnrollmentUserCard(enrollment: item),
+                      ),
+                ],
+              ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _RosterStatChip extends StatelessWidget {
+  const _RosterStatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 132,
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 19),
+          const SizedBox(width: 7),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RosterStatusPill extends StatelessWidget {
+  const _RosterStatusPill({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );

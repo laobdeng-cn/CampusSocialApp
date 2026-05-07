@@ -541,32 +541,41 @@ class CampusCheckInRecord {
 class CampusActivityEnrollment {
   const CampusActivityEnrollment({
     required this.id,
-    required this.user,
     required this.status,
     required this.createdAt,
+    this.checkedIn = false,
+    this.checkedAt = '',
+    this.checkInStatus = '',
+    required this.user,
   });
 
   final String id;
-  final CampusUser user;
   final String status;
   final String createdAt;
+  final bool checkedIn;
+  final String checkedAt;
+  final String checkInStatus;
+  final CampusUser user;
 
   factory CampusActivityEnrollment.fromJson(Map<String, dynamic> json) {
     final userJson = _readMap(json, 'user');
+    final status = _readString(json, 'status', fallback: 'registered');
+    final checkInStatus = _readString(json, 'checkInStatus', fallback: status);
+    final checkedIn =
+        json['checkedIn'] == true ||
+        status == 'checked_in' ||
+        checkInStatus == 'checked_in';
+
     return CampusActivityEnrollment(
-      id: _readString(json, 'id', fallback: _readString(json, '_id')),
+      id: _readString(json, 'id'),
+      status: status,
+      createdAt: _readString(json, 'createdAt'),
+      checkedIn: checkedIn,
+      checkedAt: _readString(json, 'checkedAt'),
+      checkInStatus: checkInStatus,
       user: userJson == null
-          ? const CampusUser(
-              name: '校园同学',
-              school: '未知学院',
-              major: '未填写专业',
-              grade: '未填写年级',
-              avatarUrl: 'https://i.pravatar.cc/180?img=1',
-              bio: '',
-            )
+          ? CampusUser.fromJson(const {})
           : CampusUser.fromJson(userJson),
-      status: _readString(json, 'status', fallback: 'registered'),
-      createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
     );
   }
 }

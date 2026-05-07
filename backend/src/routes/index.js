@@ -1562,17 +1562,55 @@ router.get('/activities/:id/enrollments', requireAuth, async (request, response,
       .sort({ createdAt: -1 })
       .lean();
 
+    const validEnrollments = enrollments.filter((enrollment) => enrollment.user);
+    const userIds = validEnrollments.map((enrollment) => enrollment.user._id || enrollment.user);
+
+    const checkIns = await CheckIn.find({
+      activity: activity._id,
+      user: { $in: userIds },
+      status: 'checked_in',
+    }).lean();
+
+    const checkInByUserId = new Map(
+      checkIns.map((item) => [String(item.user), item])
+    );
+
+    const serializedEnrollments = validEnrollments.map((enrollment) => {
+      const userId = String(enrollment.user._id || enrollment.user.id || enrollment.user);
+      const checkIn = checkInByUserId.get(userId);
+      const checkedIn = Boolean(checkIn);
+
+      return {
+        id: String(enrollment._id),
+        status: checkedIn ? 'checked_in' : enrollment.status,
+        enrollmentStatus: enrollment.status,
+        checkInStatus: checkedIn ? 'checked_in' : 'not_checked_in',
+        checkedIn,
+        checkedAt: checkIn
+          ? (checkIn.createdAt instanceof Date ? checkIn.createdAt.toISOString() : checkIn.createdAt)
+          : '',
+        createdAt: enrollment.createdAt instanceof Date
+          ? enrollment.createdAt.toISOString()
+          : enrollment.createdAt,
+        user: publicUser(enrollment.user),
+      };
+    });
+
+    const checkedInCount = serializedEnrollments.filter((item) => item.checkedIn).length;
+    const total = serializedEnrollments.length;
+    const capacity = Math.max(0, Number(activity.capacity || 0));
+    const remaining = capacity > 0 ? Math.max(0, capacity - total) : 0;
+
     response.json({
-      enrollments: enrollments
-        .filter((enrollment) => enrollment.user)
-        .map((enrollment) => ({
-          id: String(enrollment._id),
-          status: enrollment.status,
-          createdAt: enrollment.createdAt instanceof Date
-            ? enrollment.createdAt.toISOString()
-            : enrollment.createdAt,
-          user: publicUser(enrollment.user),
-        })),
+      activity: serializeActivity(activity),
+      summary: {
+        total,
+        checkedIn: checkedInCount,
+        notCheckedIn: Math.max(0, total - checkedInCount),
+        capacity,
+        remaining,
+      },
+      enrollments: serializedEnrollments,
     });
   } catch (error) {
     next(error);
