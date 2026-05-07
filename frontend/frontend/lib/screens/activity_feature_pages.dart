@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -13,7 +14,6 @@ const _basketballImage = 'asset:assets/images/activity_basketball_court.png';
 const _photoImage = 'asset:assets/images/activity_photo_camera.png';
 const _volunteerImage = 'asset:assets/images/activity_volunteer_hands.png';
 const _qrImage = 'asset:assets/images/activity_checkin_qr.png';
-
 void _showFeatureMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
@@ -97,7 +97,9 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
 
   Future<void> _refreshActivities() async {
     final future = _loadActivities();
-    setState(() => _activitiesFuture = future);
+    setState(() {
+      _activitiesFuture = future;
+    });
     await future;
   }
 
@@ -502,7 +504,9 @@ class _MyRegisteredActivitiesScreenState
 
   Future<void> _refresh() async {
     final future = CampusRepository.instance.fetchMyActivities();
-    setState(() => _activitiesFuture = future);
+    setState(() {
+      _activitiesFuture = future;
+    });
     await future;
   }
 
@@ -1122,7 +1126,9 @@ class _MyParticipatedActivitiesScreenState
 
   Future<void> _refresh() async {
     final future = CampusRepository.instance.fetchCheckInRecords();
-    setState(() => _recordsFuture = future);
+    setState(() {
+      _recordsFuture = future;
+    });
     await future;
   }
 
@@ -1741,7 +1747,9 @@ class _FavoriteActivitiesScreenState extends State<FavoriteActivitiesScreen> {
 
   Future<void> _refresh() async {
     final future = CampusRepository.instance.fetchFavorites();
-    setState(() => _favoritesFuture = future);
+    setState(() {
+      _favoritesFuture = future;
+    });
     await future;
   }
 
@@ -2368,7 +2376,9 @@ class _ActivityCalendarScreenState extends State<ActivityCalendarScreen> {
 
   Future<void> _refresh() async {
     final future = _loadActivities();
-    setState(() => _activitiesFuture = future);
+    setState(() {
+      _activitiesFuture = future;
+    });
     await future;
   }
 
@@ -4644,6 +4654,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   final _descriptionController = TextEditingController();
   final _tagsController = TextEditingController();
   final _posterController = TextEditingController();
+  String _posterPreviewUrl = '';
+  List<String> _activityImageUrls = <String>[];
   final _checkInCodeController = TextEditingController();
 
   var _category = '讲座';
@@ -4669,7 +4681,13 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       _priceController.text = '免费';
       _descriptionController.text = '';
       _tagsController.text = '校园活动,热门';
-      _posterController.text = _stageImage;
+      _posterController.text = '';
+      _posterPreviewUrl = _posterController.text.trim();
+      final existingImages = activity?.images ?? const <String>[];
+
+      _activityImageUrls = existingImages.isNotEmpty
+          ? List<String>.from(existingImages)
+          : [_posterPreviewUrl].where((url) => url.trim().isNotEmpty).toList();
       _checkInCodeController.text = 'CAMPUS2026';
       return;
     }
@@ -4687,7 +4705,37 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     _descriptionController.text = activity.description;
     _tagsController.text = activity.highlights.join(',');
     _posterController.text = activity.posterUrl;
+
+    final editingImages = activity.images.isNotEmpty
+        ? List<String>.from(activity.images)
+        : [activity.posterUrl].where((url) => url.trim().isNotEmpty).toList();
+    _activityImageUrls = editingImages;
+    _posterPreviewUrl = editingImages.isNotEmpty
+        ? editingImages.first
+        : activity.posterUrl;
+    debugPrint(
+      'edit init images => ${_activityImageUrls.length}: $_activityImageUrls',
+    );
+    _posterController.text = _posterPreviewUrl;
     _checkInCodeController.text = 'CAMPUS2026';
+    _loadEditingCheckInCode();
+  }
+
+  Future<void> _loadEditingCheckInCode() async {
+    final activity = widget.editingActivity;
+    if (activity == null) return;
+
+    try {
+      final code = await CampusRepository.instance.fetchActivityCheckInCode(
+        activityId: activity.id,
+      );
+      final cleanCode = code.trim();
+      if (!mounted || cleanCode.isEmpty) return;
+      setState(() => _checkInCodeController.text = cleanCode);
+      debugPrint('edit check-in code loaded => $cleanCode');
+    } catch (error) {
+      debugPrint('load editing check-in code failed: $error');
+    }
   }
 
   @override
@@ -4707,17 +4755,55 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
   }
 
   Future<void> _pickPoster() async {
-    final picker = ImagePicker();
-    final image = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 82,
-    );
+    try {
+      final images = await ImagePicker().pickMultiImage(imageQuality: 88);
+      if (images.isEmpty) return;
 
-    if (image == null) return;
+      final successUrls = <String>[];
+      for (final image in images) {
+        if (!mounted) return;
+        setState(() {
+          _activityImageUrls = [..._activityImageUrls, image.path];
+          _activityImageUrls = _activityImageUrls
+              .where((url) => url.trim().isNotEmpty)
+              .toSet()
+              .toList();
+          _posterPreviewUrl = _activityImageUrls.first;
+          _posterController.text = _posterPreviewUrl;
+        });
 
-    setState(() {
-      _selectedPosterPath = image.path;
-    });
+        final uploadedUrl = await CampusRepository.instance.uploadImage(
+          image.path,
+        );
+        final cleanUrl = uploadedUrl.trim();
+        if (cleanUrl.isEmpty) continue;
+        successUrls.add(cleanUrl);
+
+        if (!mounted) return;
+        setState(() {
+          final index = _activityImageUrls.indexOf(image.path);
+          if (index >= 0) {
+            _activityImageUrls[index] = cleanUrl;
+          } else {
+            _activityImageUrls.add(cleanUrl);
+          }
+          _activityImageUrls = _activityImageUrls
+              .where((url) => url.trim().isNotEmpty)
+              .toSet()
+              .toList();
+          _posterPreviewUrl = _activityImageUrls.first;
+          _posterController.text = _posterPreviewUrl;
+        });
+      }
+
+      if (successUrls.isNotEmpty && mounted) {
+        _showFeatureMessage(context, '已上传 ${successUrls.length} 张图片，第一张作为封面');
+      }
+    } catch (error) {
+      debugPrint('pick activity images failed: $error');
+      if (!mounted) return;
+      _showFeatureMessage(context, '图片上传失败，请稍后重试');
+    }
   }
 
   List<String> _readTags() {
@@ -4761,7 +4847,30 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     final input = _posterController.text.trim();
     if (input.isNotEmpty) return input;
 
+    if (_activityImageUrls.isNotEmpty) {
+      return _activityImageUrls.first;
+    }
+
     return _stageImage;
+  }
+
+  List<String> _imageUrlsForSubmit(String posterUrl) {
+    final urls = _activityImageUrls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final cleanPosterUrl = posterUrl.trim();
+    if (urls.isEmpty && cleanPosterUrl.isNotEmpty) {
+      urls.add(cleanPosterUrl);
+    }
+
+    if (urls.isEmpty) {
+      urls.add(_stageImage);
+    }
+
+    return urls;
   }
 
   Future<void> _submit() async {
@@ -4778,6 +4887,10 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
     try {
       final capacity = int.parse(_capacityController.text.trim());
       final posterUrl = await _posterForSubmit();
+      final submitImageUrls = _imageUrlsForSubmit(posterUrl);
+      debugPrint(
+        'submit activity images => ${submitImageUrls.length}: $submitImageUrls',
+      );
 
       if (_isEditing) {
         await CampusRepository.instance.updateActivity(
@@ -4797,6 +4910,8 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
           allowComments: _allowComments,
           publicDisplay: _publicDisplay,
           posterUrl: posterUrl,
+          images: submitImageUrls,
+          checkInCode: _checkInCodeController.text.trim(),
         );
       } else {
         if (widget.groupContext != null) {
@@ -4817,6 +4932,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
             allowComments: _allowComments,
             publicDisplay: _publicDisplay,
             posterUrl: posterUrl,
+            images: submitImageUrls,
             checkInCode: _checkInCodeController.text.trim(),
           );
         } else {
@@ -4836,6 +4952,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
             allowComments: _allowComments,
             publicDisplay: _publicDisplay,
             posterUrl: posterUrl,
+            images: submitImageUrls,
             checkInCode: _checkInCodeController.text.trim(),
           );
         }
@@ -4860,9 +4977,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final posterLabel = _selectedPosterPath == null
-        ? '未选择本地图片，可使用默认封面'
-        : '已选择本地封面，提交时自动上传';
+    final posterLabel = _selectedPosterPath == null ? '' : '已选择本地封面，提交时自动上传';
 
     return _FeatureScaffold(
       title: _isEditing
@@ -4883,47 +4998,18 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
         children: [
-          CampusCard(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SmartImage(
-                  url: _posterController.text.trim().isEmpty
-                      ? _stageImage
-                      : _posterController.text.trim(),
-                  height: 180,
-                  width: double.infinity,
-                  borderRadius: 20,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+              child: CampusCard(
+                padding: const EdgeInsets.all(12),
+                child: _ActivityImageUploadPreview(
+                  images: _activityImageUrls,
+                  fallbackUrl: _posterController.text.trim(),
+                  onUpload: _pickPoster,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        posterLabel,
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: _isSubmitting ? null : _pickPoster,
-                      icon: const Icon(Icons.image_rounded),
-                      label: const Text('选择封面'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                _RealActivityFormField(
-                  controller: _posterController,
-                  label: '封面地址',
-                  hintText: '可留默认，也可粘贴图片地址',
-                  icon: Icons.link_rounded,
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -5129,7 +5215,9 @@ class _MyCreatedActivitiesScreenState extends State<MyCreatedActivitiesScreen> {
 
   Future<void> _refresh() async {
     final future = CampusRepository.instance.fetchCreatedActivities();
-    setState(() => _activitiesFuture = future);
+    setState(() {
+      _activitiesFuture = future;
+    });
     await future;
   }
 
@@ -5232,10 +5320,69 @@ class _MyCreatedActivitiesScreenState extends State<MyCreatedActivitiesScreen> {
   }
 
   Future<void> _resetCode(CampusActivity activity) async {
-    String code = '';
+    String currentCode = '';
 
     try {
-      code = (await CampusRepository.instance.resetActivityCheckInCode(
+      currentCode = (await CampusRepository.instance.fetchActivityCheckInCode(
+        activityId: activity.id,
+      )).trim();
+    } catch (error) {
+      debugPrint('fetchActivityCheckInCode failed: $error');
+      if (!mounted) return;
+      _showFeatureMessage(context, '获取当前签到口令失败，请确认后端服务已启动');
+      return;
+    }
+
+    if (!mounted) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('当前签到口令'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                currentCode.isEmpty ? '暂无口令' : currentCode,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '确定要重置签到口令吗？重置后，旧口令将不能再用于签到。',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 14,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('确定重置口令'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm != true) return;
+
+    String newCode = '';
+    try {
+      newCode = (await CampusRepository.instance.resetActivityCheckInCode(
         activity,
       )).trim();
     } catch (error) {
@@ -5249,8 +5396,6 @@ class _MyCreatedActivitiesScreenState extends State<MyCreatedActivitiesScreen> {
       return;
     }
 
-    // 注意：重置口令请求已经成功后，刷新列表失败不能再误报“重置失败”。
-    // 之前的问题就是后端已 success，但 await _refresh() 抛错进入 catch，导致前端显示失败。
     try {
       await _refresh();
     } catch (error) {
@@ -5259,28 +5404,44 @@ class _MyCreatedActivitiesScreenState extends State<MyCreatedActivitiesScreen> {
 
     if (!mounted) return;
 
-    if (code.isEmpty) {
+    if (newCode.isEmpty) {
       _showFeatureMessage(context, '口令已重置，但后端未返回新口令，请点击右上角刷新');
       return;
     }
 
-    showDialog<void>(
+    await showDialog<void>(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text('签到口令已重置'),
-          content: SelectableText(
-            code,
-            style: const TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-            ),
+          title: const Text('重置后的签到口令'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                newCode,
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '新口令已写入后端数据库，请使用该口令进行现场签到。',
+                style: TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 14,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ),
           actions: [
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('知道了'),
+              child: const Text('关闭'),
             ),
           ],
         );
@@ -7877,109 +8038,347 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-class _CoverUploadCard extends StatelessWidget {
-  const _CoverUploadCard({
-    required this.imageUrl,
-    required this.onTap,
-    this.isUploading = false,
+class _ActivityImageUploadPreview extends StatefulWidget {
+  const _ActivityImageUploadPreview({
+    required this.images,
+    required this.fallbackUrl,
+    required this.onUpload,
   });
 
-  final String imageUrl;
-  final bool isUploading;
-  final VoidCallback onTap;
+  final List<String> images;
+  final String fallbackUrl;
+  final VoidCallback onUpload;
+
+  @override
+  State<_ActivityImageUploadPreview> createState() =>
+      _ActivityImageUploadPreviewState();
+}
+
+class _ActivityImageUploadPreviewState
+    extends State<_ActivityImageUploadPreview> {
+  final _pageController = PageController();
+  var _index = 0;
+
+  List<String> get _visibleImages => <String>[
+    ...widget.images,
+    if (widget.fallbackUrl.trim().isNotEmpty) widget.fallbackUrl.trim(),
+  ].where((url) => url.trim().isNotEmpty).toSet().toList();
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Widget _image(String url) {
+    final path = url.startsWith('file://')
+        ? url.replaceFirst('file://', '')
+        : url;
+    final local =
+        path.startsWith('/') &&
+        !path.startsWith('/uploads') &&
+        !path.startsWith('/api');
+    if (local) {
+      return Image.file(
+        File(path),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => SmartImage(
+          url: url,
+          width: double.infinity,
+          height: double.infinity,
+          borderRadius: 20,
+        ),
+      );
+    }
+    return SmartImage(
+      url: url,
+      width: double.infinity,
+      height: double.infinity,
+      borderRadius: 20,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return CampusCard(
-      padding: const EdgeInsets.all(14),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final images = _visibleImages;
+    if (images.isEmpty) {
+      return SizedBox(
+        height: 96,
+        child: Center(
+          child: TextButton.icon(
+            onPressed: widget.onUpload,
+            icon: const Icon(Icons.cloud_upload_rounded, size: 22),
+            label: const Text('点击上传'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.blue,
+              textStyle: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              itemCount: images.length,
+              onPageChanged: (value) => setState(() => _index = value),
+              itemBuilder: (context, index) => _image(images[index]),
+            ),
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: GestureDetector(
+                onTap: widget.onUpload,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.48),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.image_rounded, size: 16, color: Colors.white),
+                      SizedBox(width: 5),
+                      Text(
+                        '继续上传',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (images.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 12,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < images.length; i++)
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: i == _index ? 16 : 6,
+                        height: 6,
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(
+                            i == _index ? 0.95 : 0.55,
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivityImageCarousel extends StatefulWidget {
+  const _ActivityImageCarousel({required this.images});
+
+  final List<String> images;
+
+  @override
+  State<_ActivityImageCarousel> createState() => _ActivityImageCarouselState();
+}
+
+class _ActivityImageCarouselState extends State<_ActivityImageCarousel> {
+  final _pageController = PageController();
+  var _index = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final images = widget.images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    debugPrint('detail activity images => ${images.length}: $images');
+
+    if (images.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 轮播有时会被放进 Row 里，Row 给子组件的是横向不受限约束。
+        // 原来的 AspectRatio 在 unconstrained 宽度下会直接抛 RenderAspectRatio 未布局错误。
+        // 这里给 Row 场景一个固定尺寸；详情页 Column 场景仍然铺满可用宽度。
+        final hasBoundedWidth =
+            constraints.maxWidth.isFinite && constraints.maxWidth > 0;
+        final width = hasBoundedWidth ? constraints.maxWidth : 118.0;
+        final height = hasBoundedWidth ? width / 1.8 : 86.0;
+
+        return SizedBox(
+          width: width,
+          height: height,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(hasBoundedWidth ? 22 : 18),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Text(
-                  '活动封面',
-                  style: TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
+                PageView.builder(
+                  controller: _pageController,
+                  itemCount: images.length,
+                  onPageChanged: (value) => setState(() => _index = value),
+                  itemBuilder: (context, index) {
+                    return SmartImage(
+                      url: images[index],
+                      width: double.infinity,
+                      height: double.infinity,
+                      borderRadius: hasBoundedWidth ? 22 : 18,
+                    );
+                  },
                 ),
-                SizedBox(height: 16),
-                Text(
-                  '建议尺寸 16:9，JPG/PNG，\n不超过 5MB',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 14,
-                    height: 1.5,
+                if (images.length > 1 && hasBoundedWidth)
+                  Positioned(
+                    right: 12,
+                    top: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.46),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${_index + 1}/${images.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                if (images.length > 1)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: hasBoundedWidth ? 12 : 6,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < images.length; i++)
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: i == _index ? 16 : 6,
+                            height: 6,
+                            margin: const EdgeInsets.symmetric(horizontal: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(
+                                i == _index ? 0.95 : 0.55,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
-          InkWell(
-            onTap: isUploading ? null : onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              width: 150,
-              height: 96,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFAFBFD),
-                border: Border.all(
-                  color: const Color(0xFFD9DFEA),
-                  style: BorderStyle.solid,
-                ),
-                borderRadius: BorderRadius.circular(12),
+        );
+      },
+    );
+  }
+}
+
+class _CoverUploadCard extends StatelessWidget {
+  const _CoverUploadCard({
+    super.key,
+    this.onPickImage,
+    this.onPick,
+    this.onTap,
+    this.onSelectImage,
+    this.onSelectCover,
+    this.onChooseCover,
+    this.onPickCover,
+    this.onChoose,
+    this.onUpload,
+    this.onPressed,
+    this.isUploading = false,
+    this.uploading = false,
+    this.loading = false,
+  });
+
+  final VoidCallback? onPickImage;
+  final VoidCallback? onPick;
+  final VoidCallback? onTap;
+  final VoidCallback? onSelectImage;
+  final VoidCallback? onSelectCover;
+  final VoidCallback? onChooseCover;
+  final VoidCallback? onPickCover;
+  final VoidCallback? onChoose;
+  final VoidCallback? onUpload;
+  final VoidCallback? onPressed;
+  final bool isUploading;
+  final bool uploading;
+  final bool loading;
+
+  VoidCallback? get _pickAction =>
+      onPickImage ??
+      onPick ??
+      onTap ??
+      onSelectImage ??
+      onSelectCover ??
+      onChooseCover ??
+      onPickCover ??
+      onChoose ??
+      onUpload ??
+      onPressed;
+
+  bool get _busy => isUploading || uploading || loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      child: CampusCard(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: _busy ? null : _pickAction,
+            icon: const Icon(Icons.cloud_upload_rounded, size: 22),
+            label: Text(_busy ? '上传中...' : '点击上传'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.blue,
+              textStyle: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
               ),
-              clipBehavior: Clip.antiAlias,
-              child: imageUrl.isNotEmpty
-                  ? Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        SmartImage(url: imageUrl, borderRadius: 12),
-                        ColoredBox(
-                          color: Colors.black.withValues(alpha: 0.18),
-                          child: Center(
-                            child: isUploading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white,
-                                  )
-                                : const Icon(
-                                    Icons.upload_rounded,
-                                    color: Colors.white,
-                                    size: 34,
-                                  ),
-                          ),
-                        ),
-                      ],
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        isUploading
-                            ? const SizedBox(
-                                width: 26,
-                                height: 26,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.photo_camera_outlined,
-                                color: AppColors.blue,
-                                size: 34,
-                              ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isUploading ? '上传中' : '上传封面',
-                          style: const TextStyle(color: AppColors.text),
-                        ),
-                      ],
-                    ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -8804,11 +9203,10 @@ class _RealCreatedActivityCard extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  SmartImage(
-                    url: activity.posterUrl,
-                    width: 98,
-                    height: 88,
-                    borderRadius: 16,
+                  _ActivityImageCarousel(
+                    images: activity.images.isNotEmpty
+                        ? activity.images
+                        : [activity.posterUrl],
                   ),
                   const SizedBox(width: 13),
                   Expanded(
@@ -9526,11 +9924,10 @@ class _ActivityEnrollmentDetailScreenState
         body: ListView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 110),
           children: [
-            SmartImage(
-              url: _activity.posterUrl,
-              height: 210,
-              width: double.infinity,
-              borderRadius: 20,
+            _ActivityImageCarousel(
+              images: widget.activity.images.isNotEmpty
+                  ? widget.activity.images
+                  : [widget.activity.posterUrl],
             ),
 
             Row(

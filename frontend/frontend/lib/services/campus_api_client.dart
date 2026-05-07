@@ -240,7 +240,27 @@ class CampusApiClient {
     required bool publicDisplay,
     required String posterUrl,
     required String checkInCode,
+    List<String> images = const [],
   }) async {
+    final cleanPosterUrl = posterUrl.isEmpty
+        ? 'asset:assets/images/activity_stage_blue.png'
+        : posterUrl;
+    final submitImages = images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    if (submitImages.isEmpty && cleanPosterUrl.isNotEmpty) {
+      submitImages.add(cleanPosterUrl);
+    }
+    final primaryPosterUrl = submitImages.isNotEmpty
+        ? submitImages.first
+        : cleanPosterUrl;
+    // ignore: avoid_print
+    print(
+      '[api:createActivity] images => ${submitImages.length}: $submitImages',
+    );
+
     final json = await _postJson('/api/activities', {
       'title': title,
       'category': category,
@@ -254,12 +274,16 @@ class CampusApiClient {
       'tags': tags,
       'allowComments': allowComments,
       'publicDisplay': publicDisplay,
-      'posterUrl': posterUrl.isEmpty
-          ? 'asset:assets/images/activity_stage_blue.png'
-          : posterUrl,
+      'posterUrl': primaryPosterUrl,
+      'images': submitImages,
       'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
     }, token: token);
-    return _readActivityPayload(json);
+
+    final activity = _readActivityPayload(json);
+    return activity.copyWith(
+      posterUrl: primaryPosterUrl,
+      images: submitImages.isNotEmpty ? submitImages : activity.images,
+    );
   }
 
   Future<CampusActivity> updateActivity({
@@ -274,11 +298,33 @@ class CampusApiClient {
     required int capacity,
     required String price,
     required String description,
+    required String posterUrl,
     required List<String> tags,
     required bool allowComments,
     required bool publicDisplay,
-    required String posterUrl,
+    List<String> images = const [],
+    String? checkInCode,
   }) async {
+    final cleanPosterUrl = posterUrl.isEmpty
+        ? 'asset:assets/images/activity_stage_blue.png'
+        : posterUrl;
+    final submitImages = images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    if (submitImages.isEmpty && cleanPosterUrl.isNotEmpty) {
+      submitImages.add(cleanPosterUrl);
+    }
+    final primaryPosterUrl = submitImages.isNotEmpty
+        ? submitImages.first
+        : cleanPosterUrl;
+    final submitCheckInCode = (checkInCode ?? '').trim();
+    // ignore: avoid_print
+    print(
+      '[api:updateActivity] images => ${submitImages.length}: $submitImages',
+    );
+
     final json = await _patchJson('/api/activities/$activityId', {
       'title': title,
       'category': category,
@@ -289,12 +335,21 @@ class CampusApiClient {
       'capacity': capacity,
       'price': price,
       'description': description,
-      'posterUrl': posterUrl,
+      'posterUrl': primaryPosterUrl,
+      'images': submitImages,
+      'checkInCode': submitCheckInCode.isEmpty
+          ? 'CAMPUS2026'
+          : submitCheckInCode,
       'tags': tags,
       'allowComments': allowComments,
       'publicDisplay': publicDisplay,
     }, token: token);
-    return _readActivityPayload(json);
+
+    final activity = _readActivityPayload(json);
+    return activity.copyWith(
+      posterUrl: primaryPosterUrl,
+      images: submitImages.isNotEmpty ? submitImages : activity.images,
+    );
   }
 
   Future<void> deleteActivity({
@@ -302,6 +357,34 @@ class CampusApiClient {
     required String activityId,
   }) async {
     await _deleteJson('/api/activities/$activityId', token: token);
+  }
+
+  Future<String> fetchActivityCheckInCode({
+    required String token,
+    required String activityId,
+  }) async {
+    final json = await _getJson(
+      '/api/activities/$activityId/checkin-code',
+      token: token,
+    );
+
+    final directCode = json['code'] ?? json['checkInCode'];
+    if (directCode != null && directCode.toString().trim().isNotEmpty) {
+      return directCode.toString().trim();
+    }
+
+    final activity = json['activity'];
+    if (activity is Map) {
+      final nestedCode =
+          activity['checkInCode'] ??
+          activity['checkinCode'] ??
+          activity['check_in_code'];
+      if (nestedCode != null && nestedCode.toString().trim().isNotEmpty) {
+        return nestedCode.toString().trim();
+      }
+    }
+
+    return '';
   }
 
   Future<String> resetActivityCheckInCode({
@@ -828,7 +911,27 @@ class CampusApiClient {
     required bool publicDisplay,
     required String posterUrl,
     required String checkInCode,
+    List<String> images = const [],
   }) async {
+    final cleanPosterUrl = posterUrl.isEmpty
+        ? 'asset:assets/images/activity_stage_blue.png'
+        : posterUrl;
+    final submitImages = images
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toSet()
+        .toList();
+    if (submitImages.isEmpty && cleanPosterUrl.isNotEmpty) {
+      submitImages.add(cleanPosterUrl);
+    }
+    final primaryPosterUrl = submitImages.isNotEmpty
+        ? submitImages.first
+        : cleanPosterUrl;
+    // ignore: avoid_print
+    print(
+      '[api:createGroupActivity] images => ${submitImages.length}: $submitImages',
+    );
+
     final json = await _postJson('/api/groups/$groupId/activities', {
       'title': title,
       'category': category,
@@ -842,12 +945,16 @@ class CampusApiClient {
       'tags': tags,
       'allowComments': allowComments,
       'publicDisplay': publicDisplay,
-      'posterUrl': posterUrl.isEmpty
-          ? 'asset:assets/images/activity_stage_blue.png'
-          : posterUrl,
+      'posterUrl': primaryPosterUrl,
+      'images': submitImages,
       'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
     }, token: token);
-    return _readActivityPayload(json);
+
+    final activity = _readActivityPayload(json);
+    return activity.copyWith(
+      posterUrl: primaryPosterUrl,
+      images: submitImages.isNotEmpty ? submitImages : activity.images,
+    );
   }
 
   Future<void> deleteGroup({

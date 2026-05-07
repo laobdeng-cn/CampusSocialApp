@@ -16,6 +16,7 @@ const activitySchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     category: { type: String, required: true, index: true },
     posterUrl: { type: String, required: true },
+    images: [{ type: String }],
     date: { type: String, required: true },
     time: { type: String, required: true },
     location: { type: String, required: true },

@@ -313,6 +313,7 @@ class CampusRepository {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    List<String> images = const [],
     required String checkInCode,
   }) async {
     final activity = await _apiClient.createActivity(
@@ -330,6 +331,7 @@ class CampusRepository {
       allowComments: allowComments,
       publicDisplay: publicDisplay,
       posterUrl: posterUrl,
+      images: images,
       checkInCode: checkInCode,
     );
     final enriched = _enrichActivity(activity, _cachedFeed.users);
@@ -358,6 +360,8 @@ class CampusRepository {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    List<String> images = const [],
+    String? checkInCode,
   }) async {
     final id = _requireActivityId(activity);
     return _replaceCachedActivity(
@@ -377,6 +381,8 @@ class CampusRepository {
         allowComments: allowComments,
         publicDisplay: publicDisplay,
         posterUrl: posterUrl,
+        images: images,
+        checkInCode: checkInCode,
       ),
     );
   }
@@ -385,6 +391,17 @@ class CampusRepository {
     final id = _requireActivityId(activity);
     await _apiClient.deleteActivity(token: _requireToken(), activityId: id);
     _removeCachedActivity(id);
+  }
+
+  Future<String> fetchActivityCheckInCode({required Object activityId}) async {
+    final normalizedActivityId = activityId is CampusActivity
+        ? activityId.id
+        : activityId.toString();
+    final token = await _requireToken();
+    return _apiClient.fetchActivityCheckInCode(
+      token: token,
+      activityId: normalizedActivityId,
+    );
   }
 
   Future<String> resetActivityCheckInCode(CampusActivity activity) async {
@@ -823,6 +840,7 @@ class CampusRepository {
     required bool allowComments,
     required bool publicDisplay,
     required String posterUrl,
+    List<String> images = const [],
     required String checkInCode,
   }) async {
     final groupId = _requireGroupId(group);
@@ -842,6 +860,7 @@ class CampusRepository {
       allowComments: allowComments,
       publicDisplay: publicDisplay,
       posterUrl: posterUrl,
+      images: images,
       checkInCode: checkInCode,
     );
     final enrichedActivity = _replaceCachedActivity(activity);

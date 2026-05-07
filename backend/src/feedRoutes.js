@@ -196,6 +196,16 @@ function assertCheckInWindow(activity, response) {
   return true;
 }
 
+
+function normalizeActivityImages(activity) {
+  const plain = activity?.toObject ? activity.toObject() : activity || {};
+  const raw = Array.isArray(plain.images) ? plain.images : [];
+  const images = raw.map((item) => String(item || '').trim()).filter(Boolean);
+  const poster = String(plain.posterUrl || '').trim();
+  if (poster && !images.includes(poster)) images.unshift(poster);
+  return images;
+}
+
 function serializeActivity(activity, options = {}) {
   if (!activity) return null;
   const plain = typeof activity.toObject === 'function' ? activity.toObject() : activity;
@@ -358,6 +368,33 @@ router.get('/me/checkins', requireAuth, async (request, response, next) => {
 
 router.delete('/activities/:id/join', requireAuth, async (_request, response) => {
   response.status(409).json({ message: '报名成功后不可取消，请按时参加活动并完成签到' });
+});
+
+router.get('/activities/:id/checkin-code', requireAuth, async (request, response, next) => {
+  try {
+    console.log(`[activity] get check-in code request: ${request.params.id}`);
+
+    const activity = await findActivityByAnyId(request.params.id);
+    if (!activity) {
+      response.status(404).json({ message: '活动不存在' });
+      return;
+    }
+
+    const ownerId = String(activity.createdBy?._id || activity.createdBy || '');
+    const currentUserId = String(request.user._id || '');
+
+    if (ownerId !== currentUserId) {
+      response.status(403).json({ message: '只有活动发起人可以查看签到口令' });
+      return;
+    }
+
+    response.json({
+      code: String(activity.checkInCode || ''),
+    });
+  } catch (error) {
+    console.error('[activity] get check-in code failed:', error);
+    next(error);
+  }
 });
 
 router.post('/activities/:id/checkin-code/reset', requireAuth, async (request, response, next) => {

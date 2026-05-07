@@ -348,6 +348,7 @@ class CampusActivity {
     required this.title,
     required this.category,
     required this.posterUrl,
+    this.images = const [],
     required this.date,
     required this.time,
     required this.location,
@@ -373,6 +374,7 @@ class CampusActivity {
   final String title;
   final String category;
   final String posterUrl;
+  final List<String> images;
   final String date;
   final String time;
   final String location;
@@ -410,16 +412,27 @@ class CampusActivity {
     final highlights = _readStringList(json, 'highlights');
     final tags = _readStringList(json, 'tags');
 
+    final activityImages = _readStringList(json, 'images');
+    final posterFromJson = _readString(
+      json,
+      'posterUrl',
+      fallback: activityImages.isNotEmpty
+          ? activityImages.first
+          : 'https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=900&q=80',
+    );
+    final mergedImages = <String>[
+      if (posterFromJson.trim().isNotEmpty) posterFromJson,
+      ...activityImages.where(
+        (url) => url.trim().isNotEmpty && url != posterFromJson,
+      ),
+    ];
+
     return CampusActivity(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
       title: _readString(json, 'title', fallback: '未命名活动'),
       category: _readString(json, 'category', fallback: '校园活动'),
-      posterUrl: _readString(
-        json,
-        'posterUrl',
-        fallback:
-            'https://images.unsplash.com/photo-1523580494863-6f3031224c94?auto=format&fit=crop&w=900&q=80',
-      ),
+      posterUrl: posterFromJson,
+      images: mergedImages,
       date: _readString(json, 'date', fallback: '时间待定'),
       time: _readString(json, 'time', fallback: ''),
       location: _readString(json, 'location', fallback: '地点待定'),
@@ -456,6 +469,7 @@ class CampusActivity {
     String? location,
     int? enrolled,
     List<String>? highlights,
+    List<String>? images,
     List<CampusUser>? guests,
     String? activityStatus,
     String? checkInStatus,
@@ -472,6 +486,7 @@ class CampusActivity {
       title: title,
       category: category,
       posterUrl: posterUrl ?? this.posterUrl,
+      images: images ?? this.images,
       date: date ?? this.date,
       time: time ?? this.time,
       location: location ?? this.location,

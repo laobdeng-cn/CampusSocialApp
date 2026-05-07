@@ -1,3 +1,4 @@
+const _stageImageFallback = 'asset:assets/images/activity_stage_blue.png';
 const express = require('express');
 const fs = require('fs');
 const multer = require('multer');
@@ -79,10 +80,26 @@ function serializePost(post) {
   };
 }
 
+
+function normalizeActivityImages(activity) {
+  const plain = activity?.toObject ? activity.toObject() : activity || {};
+  const raw = Array.isArray(plain.images) ? plain.images : [];
+  const images = raw.map((item) => String(item || '').trim()).filter(Boolean);
+  const poster = String(plain.posterUrl || '').trim();
+  if (poster && !images.includes(poster)) images.unshift(poster);
+  return images;
+}
+
 function serializeActivity(activity) {
   if (!activity) return null;
   const plain = typeof activity.toObject === 'function' ? activity.toObject() : activity;
-  return {
+  
+  const serializedActivityImages = normalizeActivityImages(plain);
+  if (process.env.LOG_ACTIVITY_IMAGES === '1') {
+    console.log('[activity:serialize]', plain.title, serializedActivityImages.length, serializedActivityImages);
+  }
+return {
+    images: serializedActivityImages,
     ...plain,
     id: String(plain._id || plain.id || ''),
     createdBy: publicUser(plain.createdBy),
@@ -1272,11 +1289,17 @@ router.post('/activities', requireAuth, async (request, response, next) => {
     }
 
     const capacity = Math.max(1, Number(request.body.capacity || 0) || 0);
+    const activityImages = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    const primaryPosterUrl = activityImages[0] || String(request.body.posterUrl || '').trim();
+
     const activity = await Activity.create({
       createdBy: request.user._id,
       title,
       category,
-      posterUrl,
+      posterUrl: primaryPosterUrl || posterUrl,
+      images: activityImages,
       date,
       time,
       location,
@@ -1292,6 +1315,17 @@ router.post('/activities', requireAuth, async (request, response, next) => {
         ? request.body.tags.filter((item) => typeof item === 'string' && item.trim())
         : [],
     });
+
+    const requestActivityImages0 = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (requestActivityImages0.length > 0) {
+      activity.images = requestActivityImages0;
+      activity.posterUrl = requestActivityImages0[0] || activity.posterUrl;
+      await activity.save();
+      console.log('[activity:create:saved]', activity.title, activity.images.length, activity.images);
+    }
+
 
     await activity.populate('createdBy');
     response.status(201).json({ activity: serializeActivity(activity) });
@@ -1365,7 +1399,27 @@ router.patch('/activities/:id', requireAuth, async (request, response, next) => 
       activity.tags = request.body.tags.filter((item) => typeof item === 'string' && item.trim());
     }
 
-    await activity.save();
+    
+    const patchActivityImages = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : null;
+    if (patchActivityImages) {
+      activity.images = patchActivityImages;
+      activity.posterUrl = patchActivityImages[0] || activity.posterUrl;
+      console.log('[activity:update] images count:', patchActivityImages.length, patchActivityImages);
+    }
+
+
+    const requestActivityImagesForPatch = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (requestActivityImagesForPatch.length > 0) {
+      activity.images = requestActivityImagesForPatch;
+      activity.posterUrl = requestActivityImagesForPatch[0] || activity.posterUrl;
+      console.log('[activity:update:saved]', activity.title, activity.images.length, activity.images);
+    }
+
+await activity.save();
     const recipients = await Enrollment.find({
       activity: activity._id,
       status: 'registered',
@@ -1423,6 +1477,29 @@ router.delete('/activities/:id', requireAuth, async (request, response, next) =>
     });
 
     response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+router.get('/activities/:id/checkin-code', requireAuth, async (request, response, next) => {
+  try {
+    console.log('[activity] fetch check-in code request:', request.params.id);
+    const activity = await Activity.findOne({
+      _id: request.params.id,
+      createdBy: request.user._id,
+    }).populate('createdBy');
+
+    if (!activity) {
+      return response.status(404).json({ message: '活动不存在或无权限查看签到口令' });
+    }
+
+    response.json({
+      code: activity.checkInCode || '',
+      checkInCode: activity.checkInCode || '',
+      activity: serializeActivity(activity),
+    });
   } catch (error) {
     next(error);
   }
@@ -2399,6 +2476,11 @@ router.post('/groups/:id/activities', requireAuth, requireGroupManager, async (r
       return;
     }
 
+    const groupActivityImages = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    const groupPrimaryPosterUrl = groupActivityImages[0] || String(request.body.posterUrl || '').trim();
+
     const activity = await Activity.create({
       createdBy: request.user._id,
       group: request.group._id,
@@ -2420,6 +2502,17 @@ router.post('/groups/:id/activities', requireAuth, requireGroupManager, async (r
       publicDisplay: request.body.publicDisplay !== false,
       checkInCode: String(request.body.checkInCode || '').trim() || generateCheckInCode(),
     });
+
+    const requestActivityImages1 = Array.isArray(request.body.images)
+      ? request.body.images.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (requestActivityImages1.length > 0) {
+      activity.images = requestActivityImages1;
+      activity.posterUrl = requestActivityImages1[0] || activity.posterUrl;
+      await activity.save();
+      console.log('[activity:create:saved]', activity.title, activity.images.length, activity.images);
+    }
+
 
     await Group.updateOne(
       { _id: request.group._id },
