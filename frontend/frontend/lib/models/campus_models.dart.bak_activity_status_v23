@@ -407,16 +407,6 @@ class CampusActivity {
   bool get isCheckedIn =>
       checkInStatus == 'checked_in' || activityStatus == 'checked_in';
   bool get isEnded => checkInStatus == 'ended' || activityStatus == 'ended';
-  bool get isFull => capacity > 0 && enrolled >= capacity;
-  bool get canRegister => !isEnded && !isFull && !isCheckedIn;
-  String get displayStatusLabel {
-    if (isEnded) return '已结束';
-    if (isCheckedIn) return '已签到';
-    if (isCheckInAvailable) return '签到中';
-    if (isFull) return '已满员';
-    if (isCheckInNotStarted) return '未开始';
-    return '进行中';
-  }
 
   factory CampusActivity.fromJson(Map<String, dynamic> json) {
     final highlights = _readStringList(json, 'highlights');

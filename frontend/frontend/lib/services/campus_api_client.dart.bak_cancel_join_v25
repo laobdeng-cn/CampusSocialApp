@@ -224,17 +224,6 @@ class CampusApiClient {
     return _readActivityPayload(json);
   }
 
-  Future<CampusActivity> cancelJoinActivity({
-    required String token,
-    required String activityId,
-  }) async {
-    final json = await _deleteJson(
-      '/api/activities/$activityId/join',
-      token: token,
-    );
-    return _readActivityPayload(json);
-  }
-
   Future<CampusActivity> createActivity({
     required String token,
     required String title,

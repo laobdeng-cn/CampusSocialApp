@@ -10651,61 +10651,57 @@ class _ActivityEnrollmentDetailScreenState
 
   String get _actionButtonText {
     if (_isSubmitting) return '处理中...';
-
     if (!_registered) {
-      if (_isEnded) return '活动已结束';
       if (_isFull) return '名额已满';
       return '立即报名';
     }
-
     if (_isCheckedIn) return '已签到';
     if (_isEnded) return '活动已结束';
     if (_isCheckInAvailable) return '去签到';
-
-    return '取消报名';
+    if (_isCheckInNotStarted) return '签到未开始';
+    return '已报名';
   }
 
   Color get _actionButtonColor {
-    if (_isSubmitting) return AppColors.muted;
     if (_isCheckedIn) return AppColors.green;
     if (_isEnded) return AppColors.muted;
-    if (!_registered && _isFull) return AppColors.orange;
-    if (_registered && _isCheckInAvailable) return AppColors.blue;
-    if (_registered) return AppColors.red;
+    if (_registered) return AppColors.green;
+    if (_isFull) return AppColors.orange;
     return AppColors.blue;
   }
 
   bool get _mainActionEnabled {
     if (_isSubmitting) return false;
-
-    if (!_registered) {
-      return !_isEnded && !_isFull;
-    }
-
     if (_isCheckedIn) return false;
     if (_isEnded) return false;
 
-    // 已报名且签到开放：主按钮进入签到页。
-    if (_isCheckInAvailable) return true;
+    // 已报名且签到开放时，允许点击进入签到页
+    if (_registered && _isCheckInAvailable) return true;
 
-    // 已报名但还没签到：主按钮允许取消报名。
+    // 已报名但还没到签到时间，禁用
+    if (_registered) return false;
+
+    // 未报名但满员，禁用
+    if (_isFull) return false;
+
     return true;
   }
 
   Future<void> _handleMainAction() async {
-    if (_isSubmitting) return;
-
     if (!_registered) {
       await _joinActivity();
       return;
     }
-
-    if (_isCheckInAvailable && !_isCheckedIn && !_isEnded) {
+    if (_isCheckInAvailable) {
       await _goCheckIn();
       return;
     }
-
-    await _cancelRegistration();
+    _showFeatureMessage(
+      context,
+      _activity.countdownText.isNotEmpty
+          ? _activity.countdownText
+          : _currentStatusText,
+    );
   }
 
   Future<void> _goCheckIn() async {
@@ -10717,58 +10713,6 @@ class _ActivityEnrollmentDetailScreenState
     );
     if (mounted) {
       await _loadRegistrationStatus();
-    }
-  }
-
-  Future<void> _cancelRegistration() async {
-    if (_isSubmitting || !_registered || _isCheckedIn || _isEnded) return;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('取消报名'),
-          content: Text('确定取消报名「${_activity.title}」吗？取消后名额会释放给其他同学。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('再想想'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('取消报名'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => _isSubmitting = true);
-
-    try {
-      final nextActivity = await CampusRepository.instance.cancelJoinActivity(
-        _activity,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _activity = nextActivity;
-        _registered = false;
-        _changed = true;
-      });
-
-      _showFeatureMessage(context, '已取消报名');
-    } catch (error) {
-      if (mounted) _showFeatureMessage(context, _featureError(error));
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 

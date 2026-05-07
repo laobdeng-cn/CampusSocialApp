@@ -299,15 +299,6 @@ class CampusRepository {
     );
   }
 
-  Future<CampusActivity> cancelJoinActivity(CampusActivity activity) async {
-    final id = _requireActivityId(activity);
-    final nextActivity = await _apiClient.cancelJoinActivity(
-      token: _requireToken(),
-      activityId: id,
-    );
-    return _replaceCachedActivity(nextActivity);
-  }
-
   Future<CampusActivity> createActivity({
     required String title,
     required String category,

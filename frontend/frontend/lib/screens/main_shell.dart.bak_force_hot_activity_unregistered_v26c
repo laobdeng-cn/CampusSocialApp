@@ -9913,16 +9913,11 @@ class ActivityListCard extends StatefulWidget {
 class _ActivityListCardState extends State<ActivityListCard> {
   late CampusActivity _activity;
   var _isFavoriting = false;
-  var _isRegistered = false;
-  var _isCheckingRegistration = false;
 
   @override
   void initState() {
     super.initState();
     _activity = widget.activity;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _syncRegistrationState();
-    });
   }
 
   @override
@@ -9932,7 +9927,6 @@ class _ActivityListCardState extends State<ActivityListCard> {
         oldWidget.activity.isFavorited != widget.activity.isFavorited ||
         oldWidget.activity.enrolled != widget.activity.enrolled) {
       _activity = widget.activity;
-      _syncRegistrationState();
     }
   }
 
@@ -9980,41 +9974,14 @@ class _ActivityListCardState extends State<ActivityListCard> {
     }
   }
 
-  bool get _realRegistered => _isRegistered;
+  bool get _realRegistered {
+    final status = _activity.activityStatus.trim();
+    final checkInStatus = _activity.checkInStatus.trim();
 
-  Future<void> _syncRegistrationState() async {
-    final id = _activity.id.trim();
-    if (id.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _isRegistered = false;
-          _isCheckingRegistration = false;
-        });
-      }
-      return;
-    }
-
-    if (mounted) {
-      setState(() => _isCheckingRegistration = true);
-    }
-
-    try {
-      final myActivities = await CampusRepository.instance.fetchMyActivities();
-      final registered = myActivities.any((item) => item.id == id);
-
-      if (!mounted || _activity.id.trim() != id) return;
-      setState(() {
-        _isRegistered = registered;
-        _isCheckingRegistration = false;
-      });
-    } catch (_) {
-      // 未登录、接口失败或后端不可用时，不能误显示“已报名”
-      if (!mounted || _activity.id.trim() != id) return;
-      setState(() {
-        _isRegistered = false;
-        _isCheckingRegistration = false;
-      });
-    }
+    return status == 'registered' ||
+        status == 'checkin_available' ||
+        status == 'checked_in' ||
+        checkInStatus == 'checked_in';
   }
 
   Future<void> _openDetail() async {
@@ -10030,7 +9997,6 @@ class _ActivityListCardState extends State<ActivityListCard> {
 
     if (changed == true) {
       await widget.onChanged?.call();
-      await _syncRegistrationState();
     }
   }
 
@@ -10161,13 +10127,9 @@ class _ActivityListCardState extends State<ActivityListCard> {
                   ),
                   const SizedBox(height: 8),
                   _JoinActivityButton(
-                    label: _isCheckingRegistration
-                        ? '同步中'
-                        : isRegistered
-                        ? '已报名'
-                        : '报名参加',
+                    label: isRegistered ? '已报名' : '报名参加',
                     color: isRegistered ? AppColors.blue : AppColors.green,
-                    isLoading: _isCheckingRegistration,
+                    isLoading: false,
                   ),
                 ],
               ),

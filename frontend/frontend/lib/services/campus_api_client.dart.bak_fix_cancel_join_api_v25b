@@ -215,13 +215,6 @@ class CampusApiClient {
   Future<CampusActivity> joinActivity({
     required String token,
     required String activityId,
-  }) async {
-    final json = await _postJson(
-      '/api/activities/$activityId/join',
-      {},
-      token: token,
-    );
-    return _readActivityPayload(json);
   }
 
   Future<CampusActivity> cancelJoinActivity({
@@ -230,6 +223,14 @@ class CampusApiClient {
   }) async {
     final json = await _deleteJson(
       '/api/activities/$activityId/join',
+      token: token,
+    );
+    return _readActivityPayload(json);
+  }
+) async {
+    final json = await _postJson(
+      '/api/activities/$activityId/join',
+      {},
       token: token,
     );
     return _readActivityPayload(json);

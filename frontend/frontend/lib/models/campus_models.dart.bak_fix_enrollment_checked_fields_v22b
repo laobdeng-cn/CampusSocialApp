@@ -407,16 +407,6 @@ class CampusActivity {
   bool get isCheckedIn =>
       checkInStatus == 'checked_in' || activityStatus == 'checked_in';
   bool get isEnded => checkInStatus == 'ended' || activityStatus == 'ended';
-  bool get isFull => capacity > 0 && enrolled >= capacity;
-  bool get canRegister => !isEnded && !isFull && !isCheckedIn;
-  String get displayStatusLabel {
-    if (isEnded) return '已结束';
-    if (isCheckedIn) return '已签到';
-    if (isCheckInAvailable) return '签到中';
-    if (isFull) return '已满员';
-    if (isCheckInNotStarted) return '未开始';
-    return '进行中';
-  }
 
   factory CampusActivity.fromJson(Map<String, dynamic> json) {
     final highlights = _readStringList(json, 'highlights');
@@ -551,41 +541,32 @@ class CampusCheckInRecord {
 class CampusActivityEnrollment {
   const CampusActivityEnrollment({
     required this.id,
+    required this.user,
     required this.status,
     required this.createdAt,
-    this.checkedIn = false,
-    this.checkedAt = '',
-    this.checkInStatus = '',
-    required this.user,
   });
 
   final String id;
+  final CampusUser user;
   final String status;
   final String createdAt;
-  final bool checkedIn;
-  final String checkedAt;
-  final String checkInStatus;
-  final CampusUser user;
 
   factory CampusActivityEnrollment.fromJson(Map<String, dynamic> json) {
     final userJson = _readMap(json, 'user');
-    final status = _readString(json, 'status', fallback: 'registered');
-    final checkInStatus = _readString(json, 'checkInStatus', fallback: status);
-    final checkedIn =
-        json['checkedIn'] == true ||
-        status == 'checked_in' ||
-        checkInStatus == 'checked_in';
-
     return CampusActivityEnrollment(
-      id: _readString(json, 'id'),
-      status: status,
-      createdAt: _readString(json, 'createdAt'),
-      checkedIn: checkedIn,
-      checkedAt: _readString(json, 'checkedAt'),
-      checkInStatus: checkInStatus,
+      id: _readString(json, 'id', fallback: _readString(json, '_id')),
       user: userJson == null
-          ? CampusUser.fromJson(const {})
+          ? const CampusUser(
+              name: '校园同学',
+              school: '未知学院',
+              major: '未填写专业',
+              grade: '未填写年级',
+              avatarUrl: 'https://i.pravatar.cc/180?img=1',
+              bio: '',
+            )
           : CampusUser.fromJson(userJson),
+      status: _readString(json, 'status', fallback: 'registered'),
+      createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
     );
   }
 }
