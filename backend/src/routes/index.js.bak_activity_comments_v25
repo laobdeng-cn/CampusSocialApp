@@ -1460,7 +1460,6 @@ router.delete('/activities/:id', requireAuth, async (request, response, next) =>
     await Promise.all([
       Enrollment.deleteMany({ activity: activity._id }),
       CheckIn.deleteMany({ activity: activity._id }),
-      Comment.deleteMany({ activity: activity._id }),
       Favorite.deleteMany({ activity: activity._id }),
       Notification.deleteMany({ activity: activity._id }),
       BrowsingHistory.deleteMany({ kind: 'activity', refId: activity._id }),
@@ -1617,116 +1616,6 @@ router.get('/activities/:id/enrollments', requireAuth, async (request, response,
     next(error);
   }
 });
-
-
-router.get('/activities/:id/comments', requireAuth, async (request, response, next) => {
-  try {
-    const activity = await findActivityOr404(request.params.id, response);
-    if (!activity) return;
-
-    const comments = await Comment.find({
-      activity: activity._id,
-      kind: 'activity',
-    })
-      .populate('author')
-      .sort({ createdAt: -1 })
-      .lean();
-
-    response.json({
-      comments: comments.map(serializeComment),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post('/activities/:id/comments', requireAuth, async (request, response, next) => {
-  try {
-    const activity = await findActivityOr404(request.params.id, response);
-    if (!activity) return;
-
-    if (activity.allowComments === false) {
-      response.status(400).json({ message: '该活动已关闭评论' });
-      return;
-    }
-
-    const text = String(request.body.text || '').trim();
-    if (!text) {
-      response.status(400).json({ message: '评论内容不能为空' });
-      return;
-    }
-
-    if (text.length > 300) {
-      response.status(400).json({ message: '评论内容不能超过 300 字' });
-      return;
-    }
-
-    const comment = await Comment.create({
-      kind: 'activity',
-      activity: activity._id,
-      author: request.user._id,
-      text,
-    });
-
-    await comment.populate('author');
-
-    const ownerId = String(activity.createdBy?._id || activity.createdBy || '');
-    const currentUserId = String(request.user._id);
-
-    if (ownerId && ownerId !== currentUserId) {
-      await Notification.create({
-        recipient: ownerId,
-        actor: request.user._id,
-        activity: activity._id,
-        category: 'interaction',
-        title: '活动有新评论',
-        firstLine: `${request.user.name || '有同学'} 评论了「${activity.title}」`,
-        secondLine: text.slice(0, 48),
-        action: 'activity_commented',
-        unread: true,
-      });
-    }
-
-    response.status(201).json({
-      comment: serializeComment(comment),
-      activity: serializeActivity(activity),
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.delete('/activities/:id/comments/:commentId', requireAuth, async (request, response, next) => {
-  try {
-    const activity = await findActivityOr404(request.params.id, response);
-    if (!activity) return;
-
-    const comment = await Comment.findOne({
-      _id: request.params.commentId,
-      activity: activity._id,
-      kind: 'activity',
-    }).populate('author');
-
-    if (!comment) {
-      response.status(404).json({ message: '评论不存在' });
-      return;
-    }
-
-    const isAuthor = String(comment.author?._id || comment.author || '') === String(request.user._id);
-    const isActivityOwner = String(activity.createdBy?._id || activity.createdBy || '') === String(request.user._id);
-
-    if (!isAuthor && !isActivityOwner) {
-      response.status(403).json({ message: '无权删除该评论' });
-      return;
-    }
-
-    await comment.deleteOne();
-    response.json({ ok: true });
-  } catch (error) {
-    next(error);
-  }
-});
-
 
 router.post('/activities/:id/favorite', requireAuth, async (request, response, next) => {
   try {

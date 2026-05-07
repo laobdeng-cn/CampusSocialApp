@@ -485,40 +485,6 @@ class CampusRepository {
         .toList(growable: false);
   }
 
-  Future<List<CampusComment>> fetchActivityComments(
-    CampusActivity activity,
-  ) async {
-    final id = _requireActivityId(activity);
-    return _apiClient.fetchActivityComments(
-      token: _requireToken(),
-      activityId: id,
-    );
-  }
-
-  Future<CampusComment> createActivityComment(
-    CampusActivity activity,
-    String text,
-  ) async {
-    final id = _requireActivityId(activity);
-    return _apiClient.createActivityComment(
-      token: _requireToken(),
-      activityId: id,
-      text: text,
-    );
-  }
-
-  Future<void> deleteActivityComment(
-    CampusActivity activity,
-    CampusComment comment,
-  ) async {
-    final id = _requireActivityId(activity);
-    await _apiClient.deleteActivityComment(
-      token: _requireToken(),
-      activityId: id,
-      commentId: comment.id,
-    );
-  }
-
   Future<List<CampusActivityEnrollment>> fetchActivityEnrollments(
     CampusActivity activity,
   ) {

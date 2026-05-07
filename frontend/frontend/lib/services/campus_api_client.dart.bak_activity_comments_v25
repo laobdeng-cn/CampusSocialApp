@@ -492,54 +492,6 @@ class CampusApiClient {
         .toList(growable: false);
   }
 
-  Future<List<CampusComment>> fetchActivityComments({
-    required String token,
-    required String activityId,
-  }) async {
-    final json = await _getJson(
-      '/api/activities/$activityId/comments',
-      token: token,
-    );
-    final value = json['comments'];
-    if (value is! List) return const <CampusComment>[];
-
-    return value
-        .whereType<Map>()
-        .map((item) => CampusComment.fromJson(item.cast<String, dynamic>()))
-        .toList(growable: false);
-  }
-
-  Future<CampusComment> createActivityComment({
-    required String token,
-    required String activityId,
-    required String text,
-  }) async {
-    final json = await _postJson('/api/activities/$activityId/comments', {
-      'text': text,
-    }, token: token);
-
-    final value = json['comment'];
-    if (value is Map<String, dynamic>) {
-      return CampusComment.fromJson(value);
-    }
-    if (value is Map) {
-      return CampusComment.fromJson(value.cast<String, dynamic>());
-    }
-
-    throw const CampusApiException('评论发布失败');
-  }
-
-  Future<void> deleteActivityComment({
-    required String token,
-    required String activityId,
-    required String commentId,
-  }) async {
-    await _deleteJson(
-      '/api/activities/$activityId/comments/$commentId',
-      token: token,
-    );
-  }
-
   Future<CampusCheckInRecord> checkInActivity({
     required String token,
     required String activityId,
