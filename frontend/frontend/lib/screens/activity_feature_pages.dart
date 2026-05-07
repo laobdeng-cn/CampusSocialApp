@@ -61,7 +61,7 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
         _refreshActivities();
       }
     });
-          }
+  }
 
   @override
   void dispose() {
@@ -519,7 +519,7 @@ class _MyRegisteredActivitiesScreenState
         _refresh();
       }
     });
-      }
+  }
 
   @override
   void dispose() {
@@ -11159,7 +11159,7 @@ class _ActivityCommentSectionState extends State<_ActivityCommentSection> {
         });
       }
     });
-      }
+  }
 
   @override
   void didUpdateWidget(covariant _ActivityCommentSection oldWidget) {

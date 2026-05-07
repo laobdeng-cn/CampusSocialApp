@@ -1,7 +1,5 @@
 import 'dart:async';
 
-/// Lightweight in-process event bus for refreshing already-open pages after
-/// create / edit / delete / join / cancel / favorite / comment operations.
 enum CampusEventType {
   feedChanged,
   postChanged,
@@ -14,7 +12,6 @@ enum CampusEventType {
 
 class CampusDataEvent {
   const CampusDataEvent(this.type, {this.refId = '', this.payload});
-
   final CampusEventType type;
   final String refId;
   final Object? payload;
@@ -28,17 +25,11 @@ class CampusDataEvent {
 
 class CampusEventBus {
   CampusEventBus._();
-
   static final CampusEventBus instance = CampusEventBus._();
-
   final StreamController<CampusDataEvent> _controller =
       StreamController<CampusDataEvent>.broadcast(sync: true);
-
   Stream<CampusDataEvent> get stream => _controller.stream;
-
   void emit(CampusDataEvent event) {
-    if (!_controller.isClosed) {
-      _controller.add(event);
-    }
+    if (!_controller.isClosed) _controller.add(event);
   }
 }
