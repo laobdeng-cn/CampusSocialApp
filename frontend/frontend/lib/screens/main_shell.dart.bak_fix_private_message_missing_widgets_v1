@@ -1914,7 +1914,7 @@ class _PrivateMessageList extends StatelessWidget {
         }
 
         if (snapshot.hasError) {
-          return _PrivateEmptyStateCard(
+          return _EmptyStateCard(
             icon: Icons.error_outline_rounded,
             title: '私信加载失败',
             subtitle: _shellError(snapshot.error!),
@@ -1926,7 +1926,7 @@ class _PrivateMessageList extends StatelessWidget {
             .toList(growable: false);
 
         if (entries.isEmpty) {
-          return const _PrivateEmptyStateCard(
+          return const _EmptyStateCard(
             icon: Icons.mark_chat_unread_outlined,
             title: '暂无真实私信',
             subtitle: '从用户主页点击发消息，或收到别人消息后，会显示在这里',
@@ -1988,55 +1988,6 @@ const _privateChatEntries = [
     time: '昨天',
   ),
 ];
-
-class _PrivateEmptyStateCard extends StatelessWidget {
-  const _PrivateEmptyStateCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 80, 16, 104),
-      children: [
-        CampusCard(
-          padding: const EdgeInsets.fromLTRB(18, 34, 18, 34),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: AppColors.muted, size: 42),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 14,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _PrivateChatEntry {
   const _PrivateChatEntry({
@@ -2502,38 +2453,6 @@ class _ChatTimeLabel extends StatelessWidget {
         child: Text(
           label,
           style: const TextStyle(color: AppColors.muted, fontSize: 14),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatEmptyHint extends StatelessWidget {
-  const _ChatEmptyHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 90),
-      child: Center(
-        child: Column(
-          children: const [
-            Icon(Icons.forum_outlined, color: AppColors.muted, size: 42),
-            SizedBox(height: 12),
-            Text(
-              '暂无真实聊天记录',
-              style: TextStyle(
-                color: AppColors.ink,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              '发送第一条消息后，会显示在这里',
-              style: TextStyle(color: AppColors.muted, fontSize: 14),
-            ),
-          ],
         ),
       ),
     );

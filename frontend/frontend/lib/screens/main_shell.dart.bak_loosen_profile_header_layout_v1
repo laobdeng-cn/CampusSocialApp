@@ -1908,30 +1908,12 @@ class _PrivateMessageList extends StatelessWidget {
     return FutureBuilder<List<CampusConversation>>(
       future: CampusRepository.instance.fetchConversations(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            snapshot.data == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return _PrivateEmptyStateCard(
-            icon: Icons.error_outline_rounded,
-            title: '私信加载失败',
-            subtitle: _shellError(snapshot.error!),
-          );
-        }
-
-        final entries = (snapshot.data ?? const <CampusConversation>[])
+        final remoteEntries = (snapshot.data ?? const <CampusConversation>[])
             .map(_PrivateChatEntry.fromConversation)
             .toList(growable: false);
-
-        if (entries.isEmpty) {
-          return const _PrivateEmptyStateCard(
-            icon: Icons.mark_chat_unread_outlined,
-            title: '暂无真实私信',
-            subtitle: '从用户主页点击发消息，或收到别人消息后，会显示在这里',
-          );
-        }
+        final entries = remoteEntries.isEmpty
+            ? _privateChatEntries
+            : remoteEntries;
 
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
@@ -1989,55 +1971,6 @@ const _privateChatEntries = [
   ),
 ];
 
-class _PrivateEmptyStateCard extends StatelessWidget {
-  const _PrivateEmptyStateCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 80, 16, 104),
-      children: [
-        CampusCard(
-          padding: const EdgeInsets.fromLTRB(18, 34, 18, 34),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: AppColors.muted, size: 42),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 14,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _PrivateChatEntry {
   const _PrivateChatEntry({
     required this.user,
@@ -2055,7 +1988,7 @@ class _PrivateChatEntry {
       conversationId: conversation.id,
       user: conversation.contact,
       message: conversation.lastMessage,
-      time: _friendlyTime(conversation.updatedAt),
+      time: conversation.updatedAt,
       unreadCount: conversation.unreadCount,
       online: true,
     );
@@ -2324,17 +2257,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messageWidgets = _messages
-        .map(
-          (message) => message.isMine
-              ? _OutgoingChatBubble(
-                  user: message.sender,
-                  text: message.text,
-                  sent: true,
-                )
-              : _IncomingChatBubble(user: message.sender, text: message.text),
-        )
-        .toList(growable: false);
+    final messageWidgets = _conversationId.isNotEmpty
+        ? _messages
+              .map(
+                (message) => message.isMine
+                    ? _OutgoingChatBubble(text: message.text, sent: true)
+                    : _IncomingChatBubble(
+                        user: widget.contact,
+                        text: message.text,
+                      ),
+              )
+              .toList(growable: false)
+        : <Widget>[
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '嘿，周末的摄影社团采风活动你参加吗？\n我们准备去湖边拍日出和校园风景～',
+            ),
+            const _OutgoingChatBubble(text: '参加的！想拍湖边的日出，超级期待！'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '太棒了！我们计划周六早上6:30集合，\n6:40出发，你看时间OK吗？',
+            ),
+            const _OutgoingChatBubble(text: '可以的，6:30没问题！集合地点在哪呀？'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '在图书馆前的小广场集合，那里比较方便\n大家汇合。',
+            ),
+            const _OutgoingChatBubble(text: '好的好的～那需要带相机和脚架吗？'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '建议带上相机和脚架哦，日出光线比较低，\n脚架会更稳；如果有ND滤镜也可以带上。',
+            ),
+            const _OutgoingChatBubble(text: '收到！那这天天气怎么样？会不会下雨呀？'),
+            _WeatherChatBubble(user: widget.contact),
+          ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
@@ -2353,10 +2309,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
                     children: [
                       const _ChatTimeLabel(label: '最近消息'),
-                      if (messageWidgets.isEmpty)
-                        const _ChatEmptyHint()
-                      else
-                        ...messageWidgets,
+                      ...messageWidgets,
                     ],
                   ),
           ),
@@ -2508,38 +2461,6 @@ class _ChatTimeLabel extends StatelessWidget {
   }
 }
 
-class _ChatEmptyHint extends StatelessWidget {
-  const _ChatEmptyHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 90),
-      child: Center(
-        child: Column(
-          children: const [
-            Icon(Icons.forum_outlined, color: AppColors.muted, size: 42),
-            SizedBox(height: 12),
-            Text(
-              '暂无真实聊天记录',
-              style: TextStyle(
-                color: AppColors.ink,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              '发送第一条消息后，会显示在这里',
-              style: TextStyle(color: AppColors.muted, fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _IncomingChatBubble extends StatelessWidget {
   const _IncomingChatBubble({required this.user, required this.text});
 
@@ -2592,13 +2513,8 @@ class _IncomingChatBubble extends StatelessWidget {
 }
 
 class _OutgoingChatBubble extends StatelessWidget {
-  const _OutgoingChatBubble({
-    required this.user,
-    required this.text,
-    this.sent = false,
-  });
+  const _OutgoingChatBubble({required this.text, this.sent = false});
 
-  final CampusUser user;
   final String text;
   final bool sent;
 
@@ -2647,7 +2563,7 @@ class _OutgoingChatBubble extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              CampusAvatar(user: user, size: 40),
+              const CampusAvatar(user: kexin, size: 40),
             ],
           ),
           if (sent) ...[
@@ -6445,12 +6361,12 @@ class _UserProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    const headerHeight = 326.0;
-    const coverHeight = 154.0;
-    const panelTop = 126.0;
-    const avatarTop = 128.0;
-    const avatarSize = 68.0;
-    const infoInset = 104.0;
+    const headerHeight = 322.0;
+    const coverHeight = 150.0;
+    const panelTop = 114.0;
+    const avatarTop = 86.0;
+    const avatarSize = 84.0;
+    const infoInset = 112.0;
     const sidePadding = 22.0;
 
     final profileBio = _profileBioFor(user);
@@ -6495,7 +6411,7 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: topInset + 6,
+            top: topInset + 10,
             left: 14,
             right: 14,
             child: Row(
@@ -6556,14 +6472,14 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: panelTop + 24,
+            top: panelTop + 30,
             right: sidePadding,
             child: _ProfileFollowButton(user: user, onChanged: onChanged),
           ),
           Positioned(
-            top: panelTop + 22,
+            top: panelTop + 26,
             left: infoInset,
-            right: 150,
+            right: 136,
             child: FittedBox(
               alignment: Alignment.centerLeft,
               fit: BoxFit.scaleDown,
@@ -6587,9 +6503,9 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: panelTop + 58,
+            top: panelTop + 62,
             left: infoInset,
-            right: 150,
+            right: sidePadding,
             child: Text(
               profileBio,
               maxLines: 1,
@@ -6615,7 +6531,7 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: panelTop + 132,
+            top: panelTop + 142,
             left: 0,
             right: 0,
             child: Row(

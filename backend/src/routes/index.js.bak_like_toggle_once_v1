@@ -1135,45 +1135,31 @@ router.post('/posts', requireAuth, async (request, response, next) => {
 
 router.post('/posts/:id/like', requireAuth, async (request, response, next) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
+      console.warn('[posts:like] invalid id', {
+        postId: request.params.id,
+        userId: String(request.user?._id || ''),
+      });
+      response.status(404).json({ message: '帖子不存在或暂未同步到后端' });
+      return;
+    }
+
     const post = await findPostOr404(request.params.id, response);
     if (!post) return;
 
-    const existing = await Like.findOne({
-      post: post._id,
-      user: request.user._id,
-    });
-
-    let liked = false;
-
+    const existing = await Like.findOne({ post: post._id, user: request.user._id });
+    const liked = !existing;
     if (existing) {
       await existing.deleteOne();
-      liked = false;
+      post.likes = Math.max(0, post.likes - 1);
     } else {
-      try {
-        await Like.create({
-          post: post._id,
-          user: request.user._id,
-        });
-      } catch (error) {
-        // 并发重复点击时，唯一索引可能先插入成功。
-        // 这种情况按“已点赞”处理，不再重复 +1。
-        if (error?.code !== 11000) throw error;
-      }
-      liked = true;
+      await Like.create({ post: post._id, user: request.user._id });
+      post.likes += 1;
     }
 
-    const likeCount = await Like.countDocuments({ post: post._id });
-    post.likes = likeCount;
     await post.save();
     await post.populate('author');
-
-    response.json({
-      liked,
-      post: {
-        ...serializePost(post),
-        likedByMe: liked,
-      },
-    });
+    response.json({ liked, post: serializePost(post) });
   } catch (error) {
     next(error);
   }

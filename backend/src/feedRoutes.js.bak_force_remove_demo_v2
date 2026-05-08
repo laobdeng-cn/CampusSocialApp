@@ -3,52 +3,10 @@ const express = require('express');
 const { verifyToken } = require('./auth');
 const { isMongoReady } = require('./db');
 const Activity = require('./models/Activity');
-const Post = require('./models/Post');
 const CheckIn = require('./models/CheckIn');
 const Enrollment = require('./models/Enrollment');
 const User = require('./models/User');
 const seed = require('./data/seed');
-
-const DEMO_USER_NAMES = new Set([
-  '林小北',
-  '陈可欣',
-  '王子豪',
-  '刘思雨',
-  '张晓晨',
-  'user123',
-]);
-
-const DEMO_POST_TITLES = new Set([
-  '校园日落拍摄地推荐',
-  '新图书馆自习位怎么预约？求攻略！',
-  '高效复习时间表分享，亲测有效！',
-  '各科目复习资料大合集（持续更新）',
-  '图书馆自习打卡',
-  '食堂新品测评｜芝士焗饭绝了！',
-]);
-
-const DEMO_ACTIVITY_TITLES = new Set([
-  '校园音乐之夜',
-  '摄影社团采风活动',
-  '设计作品分享会',
-]);
-
-function isDemoUserPayload(user) {
-  if (!user) return false;
-  return DEMO_USER_NAMES.has(user.name) || String(user.username || '').startsWith('seed_');
-}
-
-function isDemoPostPayload(post) {
-  if (!post) return false;
-  return DEMO_POST_TITLES.has(String(post.title || '').trim()) || isDemoUserPayload(post.author);
-}
-
-function isDemoActivityPayload(activity) {
-  if (!activity) return false;
-  return DEMO_ACTIVITY_TITLES.has(String(activity.title || '').trim());
-}
-
-
 
 const router = express.Router();
 
@@ -100,19 +58,6 @@ function publicUser(user) {
   return {
     ...safeUser,
     id: String(plain._id || plain.id || ''),
-  };
-}
-
-function serializePost(post) {
-  if (!post) return null;
-  const plain = typeof post.toObject === 'function' ? post.toObject() : post;
-  return {
-    ...plain,
-    id: String(plain._id || plain.id || ''),
-    groupId: plain.group ? String(plain.group._id || plain.group.id || plain.group) : '',
-    author: publicUser(plain.author),
-    createdAt: plain.createdAt instanceof Date ? plain.createdAt.toISOString() : plain.createdAt,
-    updatedAt: plain.updatedAt instanceof Date ? plain.updatedAt.toISOString() : plain.updatedAt,
   };
 }
 
@@ -347,42 +292,28 @@ router.use(async (request, _response, next) => {
 router.get('/feed', async (_request, response, next) => {
   try {
     if (!isMongoReady()) {
-      response.json({
-        users: [],
-        posts: [],
-        activities: [],
-        groups: [],
-        topics: [],
-      });
+      response.json(seed);
       return;
     }
 
-    const [users, posts, activities] = await Promise.all([
+    const [users, activities] = await Promise.all([
       User.find().sort({ createdAt: -1 }).lean(),
-      Post.find({ visibility: { $ne: 'private' } })
-        .populate('author')
-        .sort({ createdAt: -1 })
-        .lean(),
       Activity.find({ publicDisplay: { $ne: false } })
         .populate('createdBy')
         .sort({ enrolled: -1, createdAt: -1 })
         .lean(),
     ]);
 
-    const realPosts = posts
-      .map((post) => serializePost(post))
-      .filter((post) => post && post.id && post.author);
-
     const realActivities = activities
       .map((activity) => serializeActivity(activity))
       .filter((activity) => activity && activity.id);
 
     response.json({
-      users: users.map(publicUser),
-      posts: realPosts,
-      activities: realActivities,
-      groups: [],
-      topics: [],
+      users: users.length > 0 ? users.map(publicUser) : seed.users,
+      posts: seed.posts,
+      activities: realActivities.length > 0 ? realActivities : seed.activities,
+      groups: seed.groups,
+      topics: seed.topics,
     });
   } catch (error) {
     console.error('Feed route failed:', error);

@@ -910,7 +910,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   var _isLiking = false;
   var _isFavoriting = false;
   var _isFollowingAuthor = false;
-  late bool _postLiked = widget.post.likedByMe;
+  var _postLiked = false;
   var _postFavorited = false;
   late bool _authorFollowed = widget.post.author.followedByMe;
 

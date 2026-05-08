@@ -251,8 +251,7 @@ class CampusPost {
     this.groupId = '',
     this.isPinned = false,
     this.pinnedInGroup = false,
-    bool? likedByMe,
-  }) : _likedByMe = likedByMe;
+  });
 
   final String id;
   final String groupId;
@@ -269,8 +268,6 @@ class CampusPost {
   final int shares;
   final bool isPinned;
   final bool pinnedInGroup;
-  final bool? _likedByMe;
-  bool get likedByMe => _likedByMe == true;
 
   factory CampusPost.fromJson(Map<String, dynamic> json) {
     final authorJson = _readMap(json, 'author');
@@ -300,7 +297,6 @@ class CampusPost {
       shares: _readInt(json, 'shares'),
       isPinned: json['isPinned'] == true,
       pinnedInGroup: json['pinnedInGroup'] == true,
-      likedByMe: json['likedByMe'] == true || json['liked'] == true,
     );
   }
 
@@ -320,7 +316,6 @@ class CampusPost {
     int? shares,
     bool? isPinned,
     bool? pinnedInGroup,
-    bool? likedByMe,
   }) {
     return CampusPost(
       id: id ?? this.id,
@@ -338,7 +333,6 @@ class CampusPost {
       shares: shares ?? this.shares,
       isPinned: isPinned ?? this.isPinned,
       pinnedInGroup: pinnedInGroup ?? this.pinnedInGroup,
-      likedByMe: likedByMe ?? this.likedByMe,
     );
   }
 }

@@ -207,8 +207,7 @@ class CampusApiClient {
     required String postId,
   }) async {
     final json = await _postJson('/api/posts/$postId/like', {}, token: token);
-    final post = _readPostPayload(json);
-    return post.copyWith(likedByMe: json['liked'] == true || post.likedByMe);
+    return _readPostPayload(json);
   }
 
   Future<CampusPost> togglePostFavorite({

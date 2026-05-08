@@ -6,20 +6,9 @@ import 'auth_session.dart';
 import 'campus_event_bus.dart';
 
 bool _isDemoPost(CampusPost post) {
-  const demoTitles = <String>{
-    '校园日落拍摄地推荐',
-    '新图书馆自习位怎么预约？求攻略！',
-    '高效复习时间表分享，亲测有效！',
-    '各科目复习资料大合集（持续更新）',
-    '图书馆自习打卡',
-    '食堂新品测评｜芝士焗饭绝了！',
-  };
-
-  const demoAuthors = <String>{'林小北', '陈可欣', '王子豪', '刘思雨', '张晓晨'};
-
-  return post.id.trim().isEmpty ||
-      demoTitles.contains(post.title.trim()) ||
-      demoAuthors.contains(post.author.name.trim());
+  // 只把没有后端 id 的前端 sample_data 当作演示帖子。
+  // 真实 MongoDB 帖子即使标题叫“测试帖子 / 动态标题测试”，也必须显示。
+  return post.id.trim().isEmpty;
 }
 
 class CampusRepository {
@@ -42,7 +31,9 @@ class CampusRepository {
   ];
 
   bool _isFrontendDemoPostV2(CampusPost post) {
-    return _isDemoPost(post);
+    // 只过滤前端本地假帖子。
+    // 后端真实帖子不能按标题、正文、作者名过滤，否则换账号后会看不到别人发的测试帖。
+    return post.id.trim().isEmpty;
   }
 
   List<CampusPost> _stripFrontendDemoPostsV2(Iterable<CampusPost> posts) {

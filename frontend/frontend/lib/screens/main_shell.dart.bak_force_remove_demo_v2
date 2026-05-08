@@ -16,26 +16,15 @@ import 'auth_screens.dart';
 import 'detail_pages.dart';
 
 List<CampusPost> _visibleRealHomePosts(Iterable<CampusPost> posts) {
-  const demoTitles = <String>{
-    '校园日落拍摄地推荐',
-    '新图书馆自习位怎么预约？求攻略！',
-    '高效复习时间表分享，亲测有效！',
-    '各科目复习资料大合集（持续更新）',
-    '图书馆自习打卡',
-    '食堂新品测评｜芝士焗饭绝了！',
-  };
-
-  const demoAuthors = <String>{'林小北', '陈可欣', '王子豪', '刘思雨', '张晓晨'};
-
   final seen = <String>{};
   final result = <CampusPost>[];
 
   for (final post in posts) {
     final id = post.id.trim();
-    if (id.isEmpty) continue;
 
-    if (demoTitles.contains(post.title.trim())) continue;
-    if (demoAuthors.contains(post.author.name.trim())) continue;
+    // 只过滤前端本地 sample_data 里的假帖子。
+    // MongoDB 里的真实帖子都有 ObjectId，不能再按标题/正文误杀。
+    if (id.isEmpty) continue;
 
     if (seen.add(id)) result.add(post);
   }
@@ -48,28 +37,6 @@ List<CampusPost> _visibleRealHomePosts(Iterable<CampusPost> posts) {
     }
     return 0;
   });
-
-  return result;
-}
-
-List<CampusUser> _visibleRealHomeUsers(Iterable<CampusUser> users) {
-  const demoNames = <String>{'林小北', '陈可欣', '王子豪', '刘思雨', '张晓晨'};
-
-  final currentUserId = AuthSession.user?.id.trim() ?? '';
-  final seen = <String>{};
-  final result = <CampusUser>[];
-
-  for (final user in users) {
-    final id = user.id.trim();
-    final name = user.name.trim();
-
-    if (id.isEmpty) continue;
-    if (currentUserId.isNotEmpty && id == currentUserId) continue;
-    if (demoNames.contains(name)) continue;
-
-    final key = id.isNotEmpty ? id : name;
-    if (seen.add(key)) result.add(user);
-  }
 
   return result;
 }
@@ -251,11 +218,7 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentUser = AuthSession.user;
-    final currentName = currentUser == null || currentUser.name.trim().isEmpty
-        ? '同学'
-        : currentUser.name.trim();
-    final users = _visibleRealHomeUsers(feed.users);
+    final users = feed.users;
     final posts = _visibleRealHomePosts(feed.posts);
 
     return Scaffold(
@@ -278,7 +241,7 @@ class HomeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '早上好，$currentName',
+                            '早上好，林小北',
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           const SizedBox(height: 4),
@@ -346,10 +309,10 @@ class HomeScreen extends StatelessWidget {
                 child: ListView.separated(
                   padding: kPagePadding,
                   scrollDirection: Axis.horizontal,
-                  itemCount: users.take(3).length,
+                  itemCount: users.skip(1).take(3).length,
                   separatorBuilder: (_, _) => const SizedBox(width: 10),
                   itemBuilder: (context, index) {
-                    final user = users[index];
+                    final user = users[index + 1];
                     return SizedBox(width: 112, child: _FriendCard(user: user));
                   },
                 ),
@@ -1832,7 +1795,7 @@ class _MessageCard extends StatelessWidget {
             ],
           ),
           if (entry.unread)
-            Positioned(right: 0, top: 50, child: _UnreadDot(size: 8)),
+            const Positioned(right: 0, top: 50, child: _UnreadDot(size: 8)),
         ],
       ),
     );
@@ -1908,30 +1871,12 @@ class _PrivateMessageList extends StatelessWidget {
     return FutureBuilder<List<CampusConversation>>(
       future: CampusRepository.instance.fetchConversations(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            snapshot.data == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return _PrivateEmptyStateCard(
-            icon: Icons.error_outline_rounded,
-            title: '私信加载失败',
-            subtitle: _shellError(snapshot.error!),
-          );
-        }
-
-        final entries = (snapshot.data ?? const <CampusConversation>[])
+        final remoteEntries = (snapshot.data ?? const <CampusConversation>[])
             .map(_PrivateChatEntry.fromConversation)
             .toList(growable: false);
-
-        if (entries.isEmpty) {
-          return const _PrivateEmptyStateCard(
-            icon: Icons.mark_chat_unread_outlined,
-            title: '暂无真实私信',
-            subtitle: '从用户主页点击发消息，或收到别人消息后，会显示在这里',
-          );
-        }
+        final entries = remoteEntries.isEmpty
+            ? _privateChatEntries
+            : remoteEntries;
 
         return ListView.separated(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 104),
@@ -1989,55 +1934,6 @@ const _privateChatEntries = [
   ),
 ];
 
-class _PrivateEmptyStateCard extends StatelessWidget {
-  const _PrivateEmptyStateCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 80, 16, 104),
-      children: [
-        CampusCard(
-          padding: const EdgeInsets.fromLTRB(18, 34, 18, 34),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: AppColors.muted, size: 42),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.muted,
-                  fontSize: 14,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _PrivateChatEntry {
   const _PrivateChatEntry({
     required this.user,
@@ -2055,7 +1951,7 @@ class _PrivateChatEntry {
       conversationId: conversation.id,
       user: conversation.contact,
       message: conversation.lastMessage,
-      time: _friendlyTime(conversation.updatedAt),
+      time: conversation.updatedAt,
       unreadCount: conversation.unreadCount,
       online: true,
     );
@@ -2324,17 +2220,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messageWidgets = _messages
-        .map(
-          (message) => message.isMine
-              ? _OutgoingChatBubble(
-                  user: message.sender,
-                  text: message.text,
-                  sent: true,
-                )
-              : _IncomingChatBubble(user: message.sender, text: message.text),
-        )
-        .toList(growable: false);
+    final messageWidgets = _conversationId.isNotEmpty
+        ? _messages
+              .map(
+                (message) => message.isMine
+                    ? _OutgoingChatBubble(text: message.text, sent: true)
+                    : _IncomingChatBubble(
+                        user: widget.contact,
+                        text: message.text,
+                      ),
+              )
+              .toList(growable: false)
+        : <Widget>[
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '嘿，周末的摄影社团采风活动你参加吗？\n我们准备去湖边拍日出和校园风景～',
+            ),
+            const _OutgoingChatBubble(text: '参加的！想拍湖边的日出，超级期待！'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '太棒了！我们计划周六早上6:30集合，\n6:40出发，你看时间OK吗？',
+            ),
+            const _OutgoingChatBubble(text: '可以的，6:30没问题！集合地点在哪呀？'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '在图书馆前的小广场集合，那里比较方便\n大家汇合。',
+            ),
+            const _OutgoingChatBubble(text: '好的好的～那需要带相机和脚架吗？'),
+            _IncomingChatBubble(
+              user: widget.contact,
+              text: '建议带上相机和脚架哦，日出光线比较低，\n脚架会更稳；如果有ND滤镜也可以带上。',
+            ),
+            const _OutgoingChatBubble(text: '收到！那这天天气怎么样？会不会下雨呀？'),
+            _WeatherChatBubble(user: widget.contact),
+          ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
@@ -2353,10 +2272,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
                     children: [
                       const _ChatTimeLabel(label: '最近消息'),
-                      if (messageWidgets.isEmpty)
-                        const _ChatEmptyHint()
-                      else
-                        ...messageWidgets,
+                      ...messageWidgets,
                     ],
                   ),
           ),
@@ -2508,38 +2424,6 @@ class _ChatTimeLabel extends StatelessWidget {
   }
 }
 
-class _ChatEmptyHint extends StatelessWidget {
-  const _ChatEmptyHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 90),
-      child: Center(
-        child: Column(
-          children: const [
-            Icon(Icons.forum_outlined, color: AppColors.muted, size: 42),
-            SizedBox(height: 12),
-            Text(
-              '暂无真实聊天记录',
-              style: TextStyle(
-                color: AppColors.ink,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              '发送第一条消息后，会显示在这里',
-              style: TextStyle(color: AppColors.muted, fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _IncomingChatBubble extends StatelessWidget {
   const _IncomingChatBubble({required this.user, required this.text});
 
@@ -2592,13 +2476,8 @@ class _IncomingChatBubble extends StatelessWidget {
 }
 
 class _OutgoingChatBubble extends StatelessWidget {
-  const _OutgoingChatBubble({
-    required this.user,
-    required this.text,
-    this.sent = false,
-  });
+  const _OutgoingChatBubble({required this.text, this.sent = false});
 
-  final CampusUser user;
   final String text;
   final bool sent;
 
@@ -2647,7 +2526,7 @@ class _OutgoingChatBubble extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              CampusAvatar(user: user, size: 40),
+              const CampusAvatar(user: kexin, size: 40),
             ],
           ),
           if (sent) ...[
@@ -3097,7 +2976,7 @@ class _NoticeMessageCard extends StatelessWidget {
             ],
           ),
           if (entry.unread)
-            Positioned(right: 0, top: 48, child: _UnreadDot(size: 8)),
+            const Positioned(right: 0, top: 48, child: _UnreadDot(size: 8)),
         ],
       ),
     );
@@ -5463,9 +5342,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Future<void> _refresh() async {
     final next = _loadProfile();
-    setState(() {
-      _future = next;
-    });
+    setState(() => _future = next);
     await next;
   }
 
@@ -5586,13 +5463,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               padding: EdgeInsets.zero,
               children: [
                 if (isLoading) const LinearProgressIndicator(minHeight: 2),
-                _UserProfileHeader(
-                  user: bundle.user,
-                  stats: _profileStatsFromBundle(bundle),
-                  onChanged: () {
-                    _refresh();
-                  },
-                ),
+                _buildHeader(bundle),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
                   child: Column(
@@ -6436,27 +6307,55 @@ const _albumSections = [
 ];
 
 class _UserProfileHeader extends StatelessWidget {
-  const _UserProfileHeader({required this.user, this.stats, this.onChanged});
+  const _UserProfileHeader({required this.user});
 
   final CampusUser user;
-  final _ProfileHeaderStats? stats;
-  final VoidCallback? onChanged;
+
+  Future<void> _openChat(BuildContext context) async {
+    try {
+      final conversation = await CampusRepository.instance.startConversation(
+        user,
+      );
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            contact: conversation.contact.id.isEmpty
+                ? user
+                : conversation.contact,
+            conversationId: conversation.id,
+            displayName: user.name,
+            online: true,
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ChatScreen(contact: user, displayName: user.name, online: true),
+        ),
+      );
+      _showShellMessage(context, _shellError(error));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    const headerHeight = 326.0;
+    const headerHeight = 306.0;
     const coverHeight = 154.0;
-    const panelTop = 126.0;
-    const avatarTop = 128.0;
-    const avatarSize = 68.0;
-    const infoInset = 104.0;
-    const sidePadding = 22.0;
-
+    const panelTop = 118.0;
+    const avatarTop = 86.0;
+    const avatarSize = 88.0;
+    const infoInset = 112.0;
+    const sidePadding = 24.0;
     final profileBio = _profileBioFor(user);
     final profileGrade = _profileGradeFor(user);
     final profileClub = _profileClubFor(user);
-    final profileStats = stats ?? _profileStatsFor(user);
 
     return SizedBox(
       height: headerHeight,
@@ -6485,8 +6384,8 @@ class _UserProfileHeader extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.82),
+                    Colors.white.withValues(alpha: 0.10),
+                    Colors.white.withValues(alpha: 0.78),
                   ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
@@ -6495,27 +6394,14 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: topInset + 6,
-            left: 14,
-            right: 14,
+            top: topInset + 18,
+            left: 20,
+            right: 18,
             child: Row(
               children: [
-                Material(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => Navigator.maybePop(context),
-                    child: const SizedBox(
-                      width: 42,
-                      height: 42,
-                      child: Icon(
-                        Icons.chevron_left_rounded,
-                        color: AppColors.ink,
-                        size: 34,
-                      ),
-                    ),
-                  ),
+                _RoundIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  onTap: () => Navigator.maybePop(context),
                 ),
                 const Spacer(),
                 _RoundIconButton(icon: Icons.ios_share_rounded, onTap: () {}),
@@ -6524,12 +6410,12 @@ class _UserProfileHeader extends StatelessWidget {
               ],
             ),
           ),
-          const Positioned(
+          Positioned(
             top: panelTop,
             left: 0,
             right: 0,
             bottom: 0,
-            child: DecoratedBox(
+            child: const DecoratedBox(
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(42)),
@@ -6556,14 +6442,45 @@ class _UserProfileHeader extends StatelessWidget {
             ),
           ),
           Positioned(
-            top: panelTop + 24,
+            top: panelTop + 18,
             right: sidePadding,
-            child: _ProfileFollowButton(user: user, onChanged: onChanged),
+            child: Row(
+              children: [
+                IconButton.filledTonal(
+                  tooltip: '发消息',
+                  onPressed: () => _openChat(context),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.blue.withValues(alpha: 0.1),
+                    foregroundColor: AppColors.blue,
+                  ),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: () {},
+                  icon: const Icon(Icons.add, size: 19),
+                  label: const Text('关注'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.blue,
+                    side: const BorderSide(color: AppColors.blue),
+                    minimumSize: const Size(82, 38),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           Positioned(
-            top: panelTop + 22,
+            top: panelTop + 17,
             left: infoInset,
-            right: 150,
+            right: 154,
             child: FittedBox(
               alignment: Alignment.centerLeft,
               fit: BoxFit.scaleDown,
@@ -6586,23 +6503,56 @@ class _UserProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            top: panelTop + 58,
+          const Positioned(
+            top: panelTop + 51,
             left: infoInset,
-            right: 150,
-            child: Text(
-              profileBio,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.text,
-                fontSize: 13,
-                height: 1.35,
-              ),
+            right: sidePadding,
+            child: Row(
+              children: [
+                Text(
+                  'ID：1029384756',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Icon(Icons.copy_all_outlined, size: 18, color: AppColors.muted),
+              ],
             ),
           ),
           Positioned(
-            top: panelTop + 92,
+            top: panelTop + 78,
+            left: infoInset,
+            right: sidePadding,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    profileBio,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.wb_sunny_rounded,
+                  color: AppColors.orange,
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: panelTop + 106,
             left: infoInset,
             right: sidePadding,
             child: Wrap(
@@ -6611,20 +6561,22 @@ class _UserProfileHeader extends StatelessWidget {
               children: [
                 _CompactBadge(label: profileGrade, color: AppColors.blue),
                 _CompactBadge(label: profileClub, color: AppColors.blue),
+                const _CompactBadge(label: 'ENFJ', color: AppColors.blue),
+                const _CompactBadge(label: '广东 · 深圳', color: AppColors.blue),
               ],
             ),
           ),
-          Positioned(
+          const Positioned(
             top: panelTop + 132,
             left: 0,
             right: 0,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _ProfileStat(value: '${profileStats.following}', label: '关注'),
-                _ProfileStat(value: '${profileStats.followers}', label: '粉丝'),
-                _ProfileStat(value: '${profileStats.likes}', label: '获赞'),
-                _ProfileStat(value: '${profileStats.activities}', label: '活动'),
+                _ProfileStat(value: '128', label: '关注'),
+                _ProfileStat(value: '256', label: '粉丝'),
+                _ProfileStat(value: '36', label: '获赞'),
+                _ProfileStat(value: '12', label: '活动'),
               ],
             ),
           ),
@@ -6635,21 +6587,20 @@ class _UserProfileHeader extends StatelessWidget {
 }
 
 String _profileBioFor(CampusUser user) {
-  final bio = user.bio.trim();
-  return bio.isEmpty ? '这个同学还没有填写简介。' : bio;
+  if (user.name == '陈可欣') {
+    return '热爱生活，热爱摄影，期待遇见更多有趣的人';
+  }
+  return user.bio.isEmpty ? '热爱生活，热爱摄影，期待遇见更多有趣的人' : user.bio;
 }
 
 String _profileGradeFor(CampusUser user) {
-  final grade = user.grade.trim();
-  return grade.isEmpty ? '未填写年级' : grade;
+  if (user.name == '陈可欣') return '大二';
+  return user.grade;
 }
 
 String _profileClubFor(CampusUser user) {
-  final role = user.role?.trim() ?? '';
-  if (role.isNotEmpty) return role;
-
-  final major = user.major.trim();
-  return major.isEmpty ? '未填写专业' : major;
+  if (user.name == '陈可欣') return '摄影协会';
+  return user.role ?? user.major;
 }
 
 class _ProfileActivityEntry {
@@ -11008,125 +10959,20 @@ class _ProfilePostList extends StatelessWidget {
   final CampusUser user;
   final bool showThirdPost;
 
-  bool _isTargetPost(CampusPost post) {
-    final targetId = user.id.trim();
-    final authorId = post.author.id.trim();
-
-    if (targetId.isNotEmpty && authorId.isNotEmpty) {
-      return targetId == authorId;
-    }
-
-    return post.author.name.trim() == user.name.trim();
-  }
-
-  bool _isCurrentProfile() {
-    final authUser = AuthSession.user;
-    if (authUser == null) return false;
-
-    if (authUser.id.trim().isNotEmpty && user.id.trim().isNotEmpty) {
-      return authUser.id.trim() == user.id.trim();
-    }
-
-    return authUser.name.trim() == user.name.trim();
-  }
-
-  Future<List<CampusPost>> _loadPosts() async {
-    final seen = <String>{};
-    final result = <CampusPost>[];
-
-    void addPosts(Iterable<CampusPost> posts) {
-      for (final post in posts) {
-        if (post.id.trim().isEmpty) continue;
-        if (!_isTargetPost(post)) continue;
-        if (seen.add(post.id.trim())) {
-          result.add(post);
-        }
-      }
-    }
-
-    addPosts(CampusRepository.instance.cachedFeed.posts);
-
-    try {
-      final feed = await CampusRepository.instance.fetchFeed();
-      addPosts(feed.posts);
-    } catch (_) {}
-
-    if (_isCurrentProfile()) {
-      try {
-        final myPosts = await CampusRepository.instance.fetchMyPosts();
-        addPosts(myPosts);
-      } catch (_) {}
-    }
-
-    result.sort((left, right) {
-      final leftTime = DateTime.tryParse(left.createdAt);
-      final rightTime = DateTime.tryParse(right.createdAt);
-      if (leftTime != null && rightTime != null) {
-        return rightTime.compareTo(leftTime);
-      }
-      return 0;
-    });
-
-    return result;
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<CampusPost>>(
-      future: _loadPosts(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 28),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
+    final sourcePosts = showThirdPost ? _profilePosts : _profilePosts.take(2);
+    final posts = sourcePosts
+        .map((post) => _profilePostForUser(post, user))
+        .toList(growable: false);
 
-        final posts = snapshot.data ?? const <CampusPost>[];
-
-        if (posts.isEmpty) {
-          return CampusCard(
-            margin: const EdgeInsets.fromLTRB(14, 14, 14, 16),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 26),
-              child: Column(
-                children: const [
-                  Icon(
-                    Icons.article_outlined,
-                    color: AppColors.muted,
-                    size: 38,
-                  ),
-                  SizedBox(height: 10),
-                  Text(
-                    '暂无真实帖子',
-                    style: TextStyle(
-                      color: AppColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    '发布帖子后，会自动显示在这里',
-                    style: TextStyle(color: AppColors.muted),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Column(
-          children: [
-            for (var i = 0; i < posts.length; i++) ...[
-              _ProfilePostTile(post: posts[i]),
-              if (i != posts.length - 1)
-                const Divider(indent: 16, endIndent: 16),
-            ],
-          ],
-        );
-      },
+    return Column(
+      children: [
+        for (var i = 0; i < posts.length; i++) ...[
+          _ProfilePostTile(post: posts.elementAt(i)),
+          if (i != posts.length - 1) const Divider(indent: 16, endIndent: 16),
+        ],
+      ],
     );
   }
 }
@@ -11186,7 +11032,7 @@ class _ProfilePostTile extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        _friendlyTime(post.createdAt),
+                        post.createdAt,
                         style: const TextStyle(color: AppColors.muted),
                       ),
                       const SizedBox(width: 8),
@@ -11584,7 +11430,7 @@ class PostFeedCard extends StatefulWidget {
 
 class _PostFeedCardState extends State<PostFeedCard> {
   late CampusPost _post = widget.post;
-  late bool _liked = widget.post.likedByMe;
+  late bool _liked = widget.post.likes > 0;
   late bool _favorited = widget.post.saves > 0;
   var _isLiking = false;
   var _isFavoriting = false;
@@ -11598,7 +11444,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
         oldWidget.post.saves != widget.post.saves ||
         oldWidget.post.comments != widget.post.comments) {
       _post = widget.post;
-      _liked = widget.post.likedByMe;
+      _liked = widget.post.likes > 0;
       _favorited = widget.post.saves > 0;
     }
   }
@@ -11621,7 +11467,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
       if (!mounted) return;
       setState(() {
         _post = post;
-        _liked = post.likedByMe;
+        _liked = post.likes > previousPost.likes || post.likes > 0;
       });
     } catch (error) {
       if (!mounted) return;
@@ -12374,178 +12220,6 @@ class _Shortcut extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-_ProfileHeaderStats _profileStatsFromBundle(_RealUserProfileBundle bundle) {
-  return _ProfileHeaderStats(
-    following: bundle.followingCount,
-    followers: bundle.followersCount,
-    likes: bundle.likesReceivedCount,
-    activities: bundle.activities.length,
-  );
-}
-
-class _ProfileHeaderStats {
-  const _ProfileHeaderStats({
-    required this.following,
-    required this.followers,
-    required this.likes,
-    required this.activities,
-  });
-
-  final int following;
-  final int followers;
-  final int likes;
-  final int activities;
-}
-
-_ProfileHeaderStats _profileStatsFor(CampusUser user) {
-  final targetId = user.id.trim();
-  final targetName = user.name.trim();
-
-  bool isTargetPost(CampusPost post) {
-    final authorId = post.author.id.trim();
-    final authorName = post.author.name.trim();
-
-    if (targetId.isNotEmpty && authorId.isNotEmpty) {
-      return targetId == authorId;
-    }
-
-    return targetName.isNotEmpty && authorName == targetName;
-  }
-
-  final posts = CampusRepository.instance.cachedFeed.posts
-      .where(isTargetPost)
-      .toList(growable: false);
-
-  final likes = posts.fold<int>(0, (sum, post) => sum + post.likes);
-
-  final isCurrentUser =
-      AuthSession.user != null &&
-      ((targetId.isNotEmpty &&
-              AuthSession.user!.id.trim().isNotEmpty &&
-              targetId == AuthSession.user!.id.trim()) ||
-          (targetName.isNotEmpty &&
-              targetName == AuthSession.user!.name.trim()));
-
-  final activityCount = isCurrentUser
-      ? CampusRepository.instance.cachedFeed.activities.length
-      : 0;
-
-  return _ProfileHeaderStats(
-    following: user.following,
-    followers: user.followers,
-    likes: likes,
-    activities: activityCount,
-  );
-}
-
-class _ProfileFollowButton extends StatefulWidget {
-  const _ProfileFollowButton({required this.user, this.onChanged});
-
-  final CampusUser user;
-  final VoidCallback? onChanged;
-
-  @override
-  State<_ProfileFollowButton> createState() => _ProfileFollowButtonState();
-}
-
-class _ProfileFollowButtonState extends State<_ProfileFollowButton> {
-  late bool _followed = widget.user.followedByMe;
-  var _isSubmitting = false;
-
-  bool get _isCurrentUser {
-    final authUser = AuthSession.user;
-    if (authUser == null) return false;
-
-    final currentId = authUser.id.trim();
-    final targetId = widget.user.id.trim();
-    if (currentId.isNotEmpty && targetId.isNotEmpty) {
-      return currentId == targetId;
-    }
-
-    return authUser.name.trim() == widget.user.name.trim();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ProfileFollowButton oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.user.id != widget.user.id ||
-        oldWidget.user.followedByMe != widget.user.followedByMe) {
-      _followed = widget.user.followedByMe;
-    }
-  }
-
-  Future<void> _toggleFollow() async {
-    if (_isSubmitting || _isCurrentUser) return;
-
-    setState(() => _isSubmitting = true);
-    try {
-      final next = _followed
-          ? await CampusRepository.instance.unfollowUser(widget.user)
-          : await CampusRepository.instance.followUser(widget.user);
-
-      if (!mounted) return;
-
-      setState(() {
-        _followed = next.followedByMe;
-      });
-
-      widget.onChanged?.call();
-
-      _showShellMessage(context, _followed ? '已关注 ${next.name}' : '已取消关注');
-    } catch (error) {
-      if (mounted) _showShellMessage(context, _shellError(error));
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isCurrentUser) {
-      return OutlinedButton.icon(
-        onPressed: null,
-        icon: const Icon(Icons.person_rounded, size: 18),
-        label: const Text('本人'),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(74, 38),
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-        ),
-      );
-    }
-
-    final label = _isSubmitting
-        ? '处理中'
-        : _followed
-        ? '已关注'
-        : widget.user.followsMe
-        ? '回关'
-        : '关注';
-
-    final icon = _isSubmitting
-        ? Icons.hourglass_top_rounded
-        : _followed
-        ? Icons.check_rounded
-        : Icons.add;
-
-    return OutlinedButton.icon(
-      onPressed: _isSubmitting ? null : _toggleFollow,
-      icon: Icon(icon, size: 19),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.blue,
-        side: const BorderSide(color: AppColors.blue),
-        minimumSize: const Size(82, 38),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
       ),
     );
   }
