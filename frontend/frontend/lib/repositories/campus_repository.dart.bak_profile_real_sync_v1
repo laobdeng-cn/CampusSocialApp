@@ -219,9 +219,6 @@ class CampusRepository {
       groups: _cachedFeed.groups,
       topics: _cachedFeed.topics,
     );
-    _emitSync(CampusEventType.postChanged, refId: post.id, payload: post);
-    _emitSync(CampusEventType.profileChanged);
-    _emitFeedChanged();
     return post;
   }
 
@@ -257,9 +254,6 @@ class CampusRepository {
           )
           .toList(growable: false),
     );
-    _emitSync(CampusEventType.postChanged, refId: id);
-    _emitSync(CampusEventType.profileChanged);
-    _emitFeedChanged();
   }
 
   Future<CampusPost> togglePostLike(CampusPost post) async {
@@ -293,9 +287,6 @@ class CampusRepository {
       text: text,
     );
     _replaceCachedPost(result.post);
-    _emitSync(CampusEventType.postChanged, refId: id, payload: result.post);
-    _emitSync(CampusEventType.profileChanged);
-    _emitFeedChanged();
     return result;
   }
 
@@ -642,22 +633,8 @@ class CampusRepository {
     );
   }
 
-  Future<void> clearHistory() async {
-    final token = _requireToken();
-    // 临时日志：Repository 层
-    // ignore: avoid_print
-    print('[front:repo:clearHistory] enter tokenLen=${token.length}');
-    try {
-      await _apiClient.clearHistory(token: token);
-      // ignore: avoid_print
-      print('[front:repo:clearHistory] success');
-    } catch (error, stack) {
-      // ignore: avoid_print
-      print('[front:repo:clearHistory] error => $error');
-      // ignore: avoid_print
-      print(stack);
-      rethrow;
-    }
+  Future<void> clearHistory() {
+    return _apiClient.clearHistory(token: _requireToken());
   }
 
   Future<List<CampusDraft>> fetchDrafts() {
@@ -681,12 +658,11 @@ class CampusRepository {
     );
   }
 
-  Future<void> deleteDraft(CampusDraft draft) async {
+  Future<void> deleteDraft(CampusDraft draft) {
     if (draft.id.isEmpty) {
       throw const CampusApiException('这条草稿暂未同步到后端');
     }
-    await _apiClient.deleteDraft(token: _requireToken(), draftId: draft.id);
-    _emitSync(CampusEventType.profileChanged);
+    return _apiClient.deleteDraft(token: _requireToken(), draftId: draft.id);
   }
 
   Future<List<CampusUser>> fetchFollowing() {
@@ -697,24 +673,14 @@ class CampusRepository {
     return _apiClient.fetchFollowers(token: _requireToken());
   }
 
-  Future<CampusUser> followUser(CampusUser user) async {
+  Future<CampusUser> followUser(CampusUser user) {
     final id = _requireUserId(user);
-    final next = await _apiClient.followUser(
-      token: _requireToken(),
-      userId: id,
-    );
-    _emitSync(CampusEventType.profileChanged, refId: id, payload: next);
-    return next;
+    return _apiClient.followUser(token: _requireToken(), userId: id);
   }
 
-  Future<CampusUser> unfollowUser(CampusUser user) async {
+  Future<CampusUser> unfollowUser(CampusUser user) {
     final id = _requireUserId(user);
-    final next = await _apiClient.unfollowUser(
-      token: _requireToken(),
-      userId: id,
-    );
-    _emitSync(CampusEventType.profileChanged, refId: id, payload: next);
-    return next;
+    return _apiClient.unfollowUser(token: _requireToken(), userId: id);
   }
 
   Future<List<CampusLikeRecord>> fetchLikesReceived() {
@@ -858,7 +824,6 @@ class CampusRepository {
       payload: enriched,
     );
     _emitFeedChanged();
-    _emitSync(CampusEventType.profileChanged);
     return enriched;
   }
 

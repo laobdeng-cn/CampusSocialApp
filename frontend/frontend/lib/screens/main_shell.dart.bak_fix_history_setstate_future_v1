@@ -6535,9 +6535,7 @@ class _BrowsingHistoryScreenState extends State<_BrowsingHistoryScreen> {
     try {
       await CampusRepository.instance.clearHistory();
       if (!mounted) return;
-      setState(() {
-        _future = Future.value(const <CampusHistoryRecord>[]);
-      });
+      setState(() => _future = Future.value(const <CampusHistoryRecord>[]));
       _showShellMessage(context, '浏览记录已清空');
       // ignore: avoid_print
       print('[front:ui:clearHistory] success');

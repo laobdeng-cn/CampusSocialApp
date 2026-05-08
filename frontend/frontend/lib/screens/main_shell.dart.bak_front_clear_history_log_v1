@@ -6529,23 +6529,13 @@ class _BrowsingHistoryScreenState extends State<_BrowsingHistoryScreen> {
   }
 
   Future<void> _clear() async {
-    // 临时日志：页面层
-    // ignore: avoid_print
-    print('[front:ui:clearHistory] tap');
     try {
       await CampusRepository.instance.clearHistory();
-      if (!mounted) return;
-      setState(() {
-        _future = Future.value(const <CampusHistoryRecord>[]);
-      });
-      _showShellMessage(context, '浏览记录已清空');
-      // ignore: avoid_print
-      print('[front:ui:clearHistory] success');
-    } catch (error, stack) {
-      // ignore: avoid_print
-      print('[front:ui:clearHistory] error => $error');
-      // ignore: avoid_print
-      print(stack);
+      if (mounted) {
+        setState(() => _future = Future.value(const []));
+        _showShellMessage(context, '浏览记录已清空');
+      }
+    } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
     }
   }

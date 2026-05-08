@@ -643,21 +643,8 @@ class CampusRepository {
   }
 
   Future<void> clearHistory() async {
-    final token = _requireToken();
-    // 临时日志：Repository 层
-    // ignore: avoid_print
-    print('[front:repo:clearHistory] enter tokenLen=${token.length}');
-    try {
-      await _apiClient.clearHistory(token: token);
-      // ignore: avoid_print
-      print('[front:repo:clearHistory] success');
-    } catch (error, stack) {
-      // ignore: avoid_print
-      print('[front:repo:clearHistory] error => $error');
-      // ignore: avoid_print
-      print(stack);
-      rethrow;
-    }
+    await _apiClient.clearHistory(token: _requireToken());
+    _emitSync(CampusEventType.profileChanged);
   }
 
   Future<List<CampusDraft>> fetchDrafts() {

@@ -3562,117 +3562,12 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   CampusUser get _user => AuthSession.user ?? xiaobei;
 
-  StreamSubscription<CampusDataEvent>? _profileSubscription;
-  var _isLoadingProfileCounters = false;
-  var _hasLoadedProfileCounters = false;
-
-  int? _followingCount;
-  int? _followersCount;
-  int? _likedCount;
-  int? _activityCount;
-  int? _postCount;
-  int? _commentCount;
-  int? _favoriteCount;
-  int? _favoritePostCount;
-  int? _historyCount;
-  int? _draftCount;
-  int? _groupCount;
-
-  String _countText(int? value) {
-    if (value == null && _isLoadingProfileCounters) return '...';
-    return '${value ?? 0}';
-  }
-
-  bool _shouldReloadProfileCounters(CampusDataEvent event) {
-    return event.type == CampusEventType.feedChanged ||
-        event.type == CampusEventType.postChanged ||
-        event.type == CampusEventType.activityChanged ||
-        event.type == CampusEventType.activityCommentChanged ||
-        event.type == CampusEventType.groupChanged ||
-        event.type == CampusEventType.profileChanged ||
-        event.type == CampusEventType.notificationChanged;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfileCounters();
-    _profileSubscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted || !_shouldReloadProfileCounters(event)) return;
-      _loadProfileCounters(silent: true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _profileSubscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _loadProfileCounters({bool silent = false}) async {
-    if (_isLoadingProfileCounters) return;
-    if (mounted) setState(() => _isLoadingProfileCounters = true);
-
-    try {
-      final result = await Future.wait<dynamic>([
-        CampusRepository.instance.fetchFollowing(),
-        CampusRepository.instance.fetchFollowers(),
-        CampusRepository.instance.fetchLikesReceived(),
-        CampusRepository.instance.fetchMyActivities(),
-        CampusRepository.instance.fetchMyPosts(),
-        CampusRepository.instance.fetchMyComments(),
-        CampusRepository.instance.fetchFavorites(),
-        CampusRepository.instance.fetchHistory(),
-        CampusRepository.instance.fetchDrafts(),
-        CampusRepository.instance.fetchMyGroups(),
-      ]);
-
-      final following = result[0] as List<CampusUser>;
-      final followers = result[1] as List<CampusUser>;
-      final likes = result[2] as List<CampusLikeRecord>;
-      final activities = result[3] as List<CampusActivity>;
-      final posts = result[4] as List<CampusPost>;
-      final comments = result[5] as List<CampusMyCommentRecord>;
-      final favorites = result[6] as List<CampusFavoriteRecord>;
-      final history = result[7] as List<CampusHistoryRecord>;
-      final drafts = result[8] as List<CampusDraft>;
-      final groups = result[9] as List<CampusGroup>;
-
-      if (!mounted) return;
-      setState(() {
-        _followingCount = following.length;
-        _followersCount = followers.length;
-        _likedCount = likes.length;
-        _activityCount = activities.length;
-        _postCount = posts.length;
-        _commentCount = comments.length;
-        _favoriteCount = favorites.length;
-        _favoritePostCount = favorites
-            .where((record) => record.kind == 'post')
-            .length;
-        _historyCount = history.length;
-        _draftCount = drafts.length;
-        _groupCount = groups.length;
-        _hasLoadedProfileCounters = true;
-      });
-    } catch (error) {
-      if (mounted && !silent && !_hasLoadedProfileCounters) {
-        _showShellMessage(context, _shellError(error));
-      }
-    } finally {
-      if (mounted) setState(() => _isLoadingProfileCounters = false);
-    }
-  }
-
   Future<void> _openEditProfile() async {
     final result = await Navigator.push<CampusUser>(
       context,
       MaterialPageRoute(builder: (_) => const EditProfileScreen()),
     );
-    if (result != null && mounted) {
-      setState(() {});
-      _loadProfileCounters();
-    }
+    if (result != null && mounted) setState(() {});
   }
 
   @override
@@ -3790,7 +3685,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _MyProfileStat(
-                      value: _countText(_followingCount),
+                      value: '${user.following == 0 ? 128 : user.following}',
                       label: '关注',
                       onTap: () {
                         Navigator.push(
@@ -3802,7 +3697,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                     ),
                     _MyProfileStat(
-                      value: _countText(_followersCount),
+                      value: '${user.followers == 0 ? 256 : user.followers}',
                       label: '粉丝',
                       onTap: () {
                         Navigator.push(
@@ -3814,7 +3709,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                     ),
                     _MyProfileStat(
-                      value: _countText(_likedCount),
+                      value: '36',
                       label: '获赞',
                       onTap: () {
                         Navigator.push(
@@ -3826,7 +3721,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                     ),
                     _MyProfileStat(
-                      value: _countText(_activityCount),
+                      value: '12',
                       label: '活动',
                       onTap: () {
                         Navigator.push(
@@ -3932,7 +3827,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _ProfileListRow(
                           icon: Icons.star_border_rounded,
                           title: '我收藏的帖子',
-                          value: _countText(_favoritePostCount),
+                          value: '56',
                           onTap: () {
                             Navigator.push(
                               context,
@@ -3946,26 +3841,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _ProfileListRow(
                           icon: Icons.event_available_outlined,
                           title: '我参加的活动',
-                          value: _countText(_activityCount),
+                          value: '8',
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const _MyActivitiesScreen(),
-                              ),
-                            );
-                          },
-                        ),
-                        const Divider(),
-                        _ProfileListRow(
-                          icon: Icons.groups_2_outlined,
-                          title: '我的社群',
-                          value: _countText(_groupCount),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const _MyGroupsScreen(),
+                                builder: (_) => const _JoinedActivitiesScreen(),
                               ),
                             );
                           },
@@ -3974,7 +3855,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _ProfileListRow(
                           icon: Icons.drafts_outlined,
                           title: '草稿箱',
-                          value: _countText(_draftCount),
+                          value: '3',
                           onTap: () {
                             Navigator.push(
                               context,
@@ -5923,47 +5804,6 @@ class _SegmentedFilterTabs extends StatelessWidget {
   }
 }
 
-class _ProfileEmptyCard extends StatelessWidget {
-  const _ProfileEmptyCard({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return CampusCard(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 22),
-        child: Column(
-          children: [
-            Icon(icon, size: 46, color: AppColors.muted),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                color: AppColors.ink,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.muted, height: 1.45),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _MyPostsScreen extends StatefulWidget {
   const _MyPostsScreen({required this.user});
 
@@ -6181,308 +6021,105 @@ class _MyCommentsScreenState extends State<_MyCommentsScreen> {
   }
 }
 
-class _MyFavoritesScreen extends StatefulWidget {
+class _MyFavoritesScreen extends StatelessWidget {
   const _MyFavoritesScreen({required this.user});
 
   final CampusUser user;
 
   @override
-  State<_MyFavoritesScreen> createState() => _MyFavoritesScreenState();
-}
-
-class _MyFavoritesScreenState extends State<_MyFavoritesScreen> {
-  late Future<List<CampusFavoriteRecord>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = CampusRepository.instance.fetchFavorites();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.activityChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.profileChanged) {
-        _refresh();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = CampusRepository.instance.fetchFavorites();
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return _ProfileSubPageShell(
       title: '我的收藏',
+      trailing: const Icon(
+        Icons.search_rounded,
+        color: AppColors.ink,
+        size: 30,
+      ),
       child: FutureBuilder<List<CampusFavoriteRecord>>(
-        future: _future,
+        future: CampusRepository.instance.fetchFavorites(),
         builder: (context, snapshot) {
           final records = snapshot.data ?? const <CampusFavoriteRecord>[];
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+          return Column(
             children: [
-              CampusCard(
-                child: Text(
-                  snapshot.connectionState == ConnectionState.waiting
-                      ? '正在同步收藏数据'
-                      : '共 ${records.length} 条收藏',
-                  style: const TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 8, 14, 6),
+                child: _SegmentedFilterTabs(
+                  tabs: ['全部', '帖子', '活动'],
+                  compact: true,
                 ),
               ),
-              const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  records.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 42),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (records.isEmpty)
-                const _ProfileEmptyCard(
-                  icon: Icons.star_border_rounded,
-                  title: '暂无收藏',
-                  subtitle: '收藏帖子或活动后，会自动显示在这里',
-                )
-              else
-                for (final record in records) ...[
-                  _RealFavoriteRecordTile(record: record),
-                  const SizedBox(height: 12),
-                ],
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _RealFavoriteRecordTile extends StatelessWidget {
-  const _RealFavoriteRecordTile({required this.record, this.postOnly = false});
-
-  final CampusFavoriteRecord record;
-  final bool postOnly;
-
-  @override
-  Widget build(BuildContext context) {
-    final isActivity = record.kind == 'activity';
-    final title = isActivity ? record.activity.title : record.post.title;
-    final subtitle = isActivity
-        ? '${record.activity.date}  ${record.activity.time} · ${record.activity.location}'
-        : record.post.body;
-    final image = isActivity
-        ? record.activity.posterUrl
-        : (record.post.images.isEmpty
-              ? record.post.author.avatarUrl
-              : record.post.images.first);
-
-    return CampusCard(
-      child: Row(
-        children: [
-          SmartImage(url: image, width: 72, height: 72, borderRadius: 12),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Pill(
-                  label: isActivity ? '活动' : '帖子',
-                  color: isActivity ? AppColors.green : AppColors.blue,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '收藏于 ${_friendlyTime(record.createdAt)}',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MyGroupsScreen extends StatefulWidget {
-  const _MyGroupsScreen();
-
-  @override
-  State<_MyGroupsScreen> createState() => _MyGroupsScreenState();
-}
-
-class _MyGroupsScreenState extends State<_MyGroupsScreen> {
-  late Future<List<CampusGroup>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = CampusRepository.instance.fetchMyGroups();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.groupChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.profileChanged) {
-        _refresh();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = CampusRepository.instance.fetchMyGroups();
-    });
-  }
-
-  String _membershipLabel(CampusGroup group) {
-    if (group.canManage) return '管理中';
-    if (group.membershipStatus == 'pending') return '审核中';
-    if (group.joined) return '已加入';
-    return '未加入';
-  }
-
-  Color _membershipColor(CampusGroup group) {
-    if (group.canManage) return AppColors.blue;
-    if (group.membershipStatus == 'pending') return AppColors.orange;
-    if (group.joined) return AppColors.green;
-    return AppColors.muted;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _ProfileSubPageShell(
-      title: '我的社群',
-      child: FutureBuilder<List<CampusGroup>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final groups = snapshot.data ?? const <CampusGroup>[];
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-            children: [
-              CampusCard(
-                child: Text(
-                  snapshot.connectionState == ConnectionState.waiting
-                      ? '正在同步社群数据'
-                      : '共 ${groups.length} 个社群',
-                  style: const TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  groups.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 42),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (groups.isEmpty)
-                const _ProfileEmptyCard(
-                  icon: Icons.groups_2_outlined,
-                  title: '暂无社群',
-                  subtitle: '加入或创建社群后，会自动显示在这里',
-                )
-              else
-                for (final group in groups) ...[
-                  CampusCard(
-                    onTap: () async {
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GroupDetailScreen(group: group),
-                        ),
-                      );
-                      if (mounted) _refresh();
-                    },
-                    child: Row(
-                      children: [
-                        SmartImage(
-                          url: group.iconUrl,
-                          width: 58,
-                          height: 58,
-                          borderRadius: 14,
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                group.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.ink,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${group.members} 位成员 · ${group.tags.take(2).join(' / ')}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: AppColors.muted),
-                              ),
-                              const SizedBox(height: 8),
-                              Pill(
-                                label: _membershipLabel(group),
-                                color: _membershipColor(group),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right_rounded),
-                      ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.bookmark_border_rounded,
+                      color: AppColors.muted,
+                      size: 19,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
+                    const SizedBox(width: 6),
+                    Text(
+                      '共 ${records.isEmpty ? 28 : records.length} 条收藏',
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    const Spacer(),
+                    const Icon(
+                      Icons.sort_rounded,
+                      color: AppColors.muted,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      '最新收藏',
+                      style: TextStyle(color: AppColors.muted),
+                    ),
+                    const Icon(
+                      Icons.arrow_drop_down_rounded,
+                      color: AppColors.muted,
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  children: [
+                    if (records.isEmpty)
+                      _FavoritePostCard(user: user)
+                    else
+                      for (final record in records) ...[
+                        if (record.kind == 'activity')
+                          _SavedActivityTile.fromActivity(
+                            activity: record.activity,
+                            savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
+                          )
+                        else
+                          _SavedPostTile.fromPost(
+                            post: record.post,
+                            savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
+                          ),
+                        const SizedBox(height: 12),
+                      ],
+                    if (records.isEmpty) ...[
+                      const SizedBox(height: 12),
+                      const _FavoriteActivityCard(),
+                      const SizedBox(height: 12),
+                      const _FavoriteTopicCard(),
+                      const SizedBox(height: 12),
+                      const _FavoriteUserCard(
+                        kindLabel: '用户',
+                        title: '摄影协会',
+                        subtitle: '成员 286 · 帖子 342',
+                        body: '用镜头记录校园生活，分享摄影技巧，定期组织外拍和作品交流。',
+                        action: '已关注',
+                        icon: Icons.photo_camera_rounded,
+                        iconColor: AppColors.blue,
+                        time: '收藏于  5月10日  11:22',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -6500,52 +6137,21 @@ class _BrowsingHistoryScreen extends StatefulWidget {
 
 class _BrowsingHistoryScreenState extends State<_BrowsingHistoryScreen> {
   late Future<List<CampusHistoryRecord>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
 
   @override
   void initState() {
     super.initState();
     _future = CampusRepository.instance.fetchHistory();
-
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-
-      if (event.type == CampusEventType.profileChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.activityChanged ||
-          event.type == CampusEventType.groupChanged) {
-        setState(() {
-          _future = CampusRepository.instance.fetchHistory();
-        });
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
   }
 
   Future<void> _clear() async {
-    // 临时日志：页面层
-    // ignore: avoid_print
-    print('[front:ui:clearHistory] tap');
     try {
       await CampusRepository.instance.clearHistory();
-      if (!mounted) return;
-      setState(() {
-        _future = Future.value(const <CampusHistoryRecord>[]);
-      });
-      _showShellMessage(context, '浏览记录已清空');
-      // ignore: avoid_print
-      print('[front:ui:clearHistory] success');
-    } catch (error, stack) {
-      // ignore: avoid_print
-      print('[front:ui:clearHistory] error => $error');
-      // ignore: avoid_print
-      print(stack);
+      if (mounted) {
+        setState(() => _future = Future.value(const []));
+        _showShellMessage(context, '浏览记录已清空');
+      }
+    } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
     }
   }
@@ -6569,13 +6175,7 @@ class _BrowsingHistoryScreenState extends State<_BrowsingHistoryScreen> {
           if (records.isEmpty) {
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: const [
-                _ProfileEmptyCard(
-                  icon: Icons.history_rounded,
-                  title: '暂无浏览记录',
-                  subtitle: '查看帖子、活动或社群详情后，会自动显示在这里',
-                ),
-              ],
+              children: const [_FallbackHistorySections()],
             );
           }
           return ListView(
@@ -6593,79 +6193,41 @@ class _BrowsingHistoryScreenState extends State<_BrowsingHistoryScreen> {
   }
 }
 
-class _FavoritePostsScreen extends StatefulWidget {
+class _FavoritePostsScreen extends StatelessWidget {
   const _FavoritePostsScreen();
-
-  @override
-  State<_FavoritePostsScreen> createState() => _FavoritePostsScreenState();
-}
-
-class _FavoritePostsScreenState extends State<_FavoritePostsScreen> {
-  late Future<List<CampusFavoriteRecord>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = CampusRepository.instance.fetchFavorites();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.profileChanged) {
-        _refresh();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = CampusRepository.instance.fetchFavorites();
-    });
-  }
 
   @override
   Widget build(BuildContext context) {
     return _ProfileSubPageShell(
       title: '我收藏的帖子',
+      trailing: const Icon(
+        Icons.search_rounded,
+        color: AppColors.ink,
+        size: 30,
+      ),
       child: FutureBuilder<List<CampusFavoriteRecord>>(
-        future: _future,
+        future: CampusRepository.instance.fetchFavorites(),
         builder: (context, snapshot) {
-          final records = (snapshot.data ?? const <CampusFavoriteRecord>[])
+          final records = snapshot.data ?? const <CampusFavoriteRecord>[];
+          final postRecords = records
               .where((record) => record.kind == 'post')
               .toList(growable: false);
-
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             children: [
               const _SegmentedFilterTabs(
                 tabs: ['全部', '最新收藏', '最多点赞'],
                 compact: true,
               ),
               const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  records.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 42),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (records.isEmpty)
-                const _ProfileEmptyCard(
-                  icon: Icons.star_border_rounded,
-                  title: '暂无收藏帖子',
-                  subtitle: '收藏帖子后，会自动显示在这里',
-                )
+              if (postRecords.isEmpty)
+                ..._fallbackSavedPostTiles()
               else
-                for (final record in records) ...[
-                  _RealFavoriteRecordTile(record: record, postOnly: true),
+                for (final record in postRecords) ...[
+                  _SavedPostTile.fromPost(
+                    post: record.post,
+                    savedAt: '收藏于 ${_friendlyTime(record.createdAt)}',
+                  ),
                   const SizedBox(height: 12),
                 ],
             ],
@@ -6760,25 +6322,11 @@ class _DraftBoxScreen extends StatefulWidget {
 
 class _DraftBoxScreenState extends State<_DraftBoxScreen> {
   late Future<List<CampusDraft>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
 
   @override
   void initState() {
     super.initState();
     _future = CampusRepository.instance.fetchDrafts();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.profileChanged ||
-          event.type == CampusEventType.feedChanged) {
-        setState(() => _future = CampusRepository.instance.fetchDrafts());
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
   }
 
   Future<void> _deleteDraft(CampusDraft draft) async {
@@ -6814,11 +6362,7 @@ class _DraftBoxScreenState extends State<_DraftBoxScreen> {
               ),
               const SizedBox(height: 14),
               if (drafts.isEmpty)
-                const _ProfileEmptyCard(
-                  icon: Icons.drafts_outlined,
-                  title: '暂无草稿',
-                  subtitle: '保存草稿后，会自动显示在这里',
-                )
+                ..._fallbackDraftTiles()
               else
                 for (final draft in drafts) ...[
                   _DraftTile.fromDraft(
@@ -7104,148 +6648,80 @@ class _LikedRecordsScreenState extends State<_LikedRecordsScreen> {
   }
 }
 
-class _MyActivitiesScreen extends StatefulWidget {
+class _MyActivitiesScreen extends StatelessWidget {
   const _MyActivitiesScreen();
-
-  @override
-  State<_MyActivitiesScreen> createState() => _MyActivitiesScreenState();
-}
-
-class _MyActivitiesScreenState extends State<_MyActivitiesScreen> {
-  late Future<List<CampusActivity>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = CampusRepository.instance.fetchMyActivities();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.activityChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.profileChanged) {
-        _refresh();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _refresh() {
-    setState(() {
-      _future = CampusRepository.instance.fetchMyActivities();
-    });
-  }
-
-  bool _isEndedActivity(CampusActivity activity) {
-    final status = activity.activityStatus.trim();
-    return activity.isEnded ||
-        status == 'ended' ||
-        status == 'finished' ||
-        status == 'completed';
-  }
-
-  bool _isUpcomingActivity(CampusActivity activity) {
-    return activity.isCheckInNotStarted ||
-        activity.activityStatus.trim() == 'registered';
-  }
-
-  String _statusLabel(CampusActivity activity) {
-    if (activity.isCheckedIn) return '已签到';
-    if (_isEndedActivity(activity)) return '已结束';
-    if (activity.isCheckInAvailable) return '待签到';
-    if (_isUpcomingActivity(activity)) return '已报名';
-    return '已报名';
-  }
-
-  Color _statusColor(CampusActivity activity) {
-    if (activity.isCheckedIn) return AppColors.green;
-    if (_isEndedActivity(activity)) return AppColors.muted;
-    if (activity.isCheckInAvailable) return AppColors.orange;
-    return AppColors.blue;
-  }
 
   @override
   Widget build(BuildContext context) {
     return _StatModuleShell(
       title: '我的活动',
       tabs: const ['全部', '进行中', '已结束'],
-      child: FutureBuilder<List<CampusActivity>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final activities = snapshot.data ?? const <CampusActivity>[];
-          final endedCount = activities.where(_isEndedActivity).length;
-          final upcomingCount = activities.where(_isUpcomingActivity).length;
-          final ongoingCount = activities.length - endedCount;
-
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+        children: const [
+          Row(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _ActivitySummaryCard(
-                      label: '进行中',
-                      value: '$ongoingCount',
-                      icon: Icons.flag_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _ActivitySummaryCard(
-                      label: '即将开始',
-                      value: '$upcomingCount',
-                      icon: Icons.schedule_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _ActivitySummaryCard(
-                      label: '已结束',
-                      value: '$endedCount',
-                      icon: Icons.event_available_rounded,
-                    ),
-                  ),
-                ],
+              Expanded(
+                child: _ActivitySummaryCard(
+                  label: '进行中',
+                  value: '3',
+                  icon: Icons.flag_rounded,
+                ),
               ),
-              const SizedBox(height: 20),
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  activities.isEmpty)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 42),
-                    child: CircularProgressIndicator(),
-                  ),
-                )
-              else if (activities.isEmpty)
-                const _ProfileEmptyCard(
-                  icon: Icons.event_busy_outlined,
-                  title: '暂无活动',
-                  subtitle: '报名、签到或参与活动后，会自动显示在这里',
-                )
-              else
-                for (final activity in activities) ...[
-                  _MyActivityModuleCard(
-                    title: activity.title,
-                    image: activity.posterUrl,
-                    time: '${activity.date}  ${activity.time}',
-                    location: activity.location,
-                    tags: [
-                      _TinyTag(
-                        label: _statusLabel(activity),
-                        color: _statusColor(activity),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                ],
+              SizedBox(width: 12),
+              Expanded(
+                child: _ActivitySummaryCard(
+                  label: '即将开始',
+                  value: '2',
+                  icon: Icons.schedule_rounded,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: _ActivitySummaryCard(
+                  label: '已结束',
+                  value: '7',
+                  icon: Icons.event_available_rounded,
+                ),
+              ),
             ],
-          );
-        },
+          ),
+          SizedBox(height: 20),
+          _MyActivityModuleCard(
+            title: '校园歌手大赛',
+            image: 'asset:assets/images/activity_music_thumb.png',
+            time: '2024/06/01 18:30',
+            location: '大学生活动中心  大礼堂',
+            tags: [_TinyTag(label: '可报名', color: AppColors.blue)],
+          ),
+          SizedBox(height: 14),
+          _MyActivityModuleCard(
+            title: '摄影社团采风活动',
+            image: 'asset:assets/images/activity_photo_thumb.png',
+            time: '2024/06/08 08:00',
+            location: '东湖风景区',
+            tags: [
+              _TinyTag(label: '可报名', color: AppColors.blue),
+              _TinyTag(label: '发起人', color: AppColors.green),
+            ],
+          ),
+          SizedBox(height: 14),
+          _MyActivityModuleCard(
+            title: 'AI 未来发展趋势讲座',
+            image: 'asset:assets/images/activity_ai_head.png',
+            time: '2024/06/15 14:00',
+            location: '图书馆报告厅',
+            tags: [_TinyTag(label: '可报名', color: AppColors.blue)],
+          ),
+          SizedBox(height: 14),
+          _MyActivityModuleCard(
+            title: '志愿者在行动',
+            image: 'asset:assets/images/activity_volunteer_hands.png',
+            time: '2024/05/25 09:00',
+            location: '校园及周边社区',
+            tags: [_TinyTag(label: '已完成', color: AppColors.muted)],
+          ),
+        ],
       ),
     );
   }

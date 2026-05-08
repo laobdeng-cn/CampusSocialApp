@@ -649,33 +649,56 @@ class CampusApiClient {
   }
 
   Future<void> clearHistory({required String token}) async {
-    const path = '/api/me/history';
-    final tokenTail = token.length <= 6
-        ? token
-        : token.substring(token.length - 6);
-    // 临时日志：清空浏览记录前端请求链路
+    final uri = Uri.parse(baseUrl).replace(path: '/api/me/history');
+    final client = HttpClient()..connectionTimeout = timeout;
+
     // ignore: avoid_print
-    print(
-      '[front:api:clearHistory] DELETE ' +
-          path +
-          ' tokenLen=' +
-          token.length.toString() +
-          ' tokenTail=' +
-          tokenTail,
-    );
+    print('[api:clearHistory] start DELETE $uri token=${token.isNotEmpty}');
+
     try {
-      await _deleteJson(path, token: token);
-      // ignore: avoid_print
-      print('[front:api:clearHistory] success ' + path);
-    } catch (error, stack) {
+      final request = await client.deleteUrl(uri).timeout(timeout);
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+
+      final response = await request.close().timeout(timeout);
+      final responseBody = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(timeout);
+
       // ignore: avoid_print
       print(
-        '[front:api:clearHistory] error ' + path + ' => ' + error.toString(),
+        '[api:clearHistory] response status=${response.statusCode} body=$responseBody',
       );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw CampusApiException(
+          'Request failed with ${response.statusCode}: $responseBody',
+        );
+      }
+
+      if (responseBody.trim().isNotEmpty) {
+        try {
+          jsonDecode(responseBody);
+        } catch (error) {
+          // ignore: avoid_print
+          print('[api:clearHistory] jsonDecode error=$error body=$responseBody');
+          throw CampusApiException('清空浏览记录返回格式异常: $responseBody');
+        }
+      }
+
       // ignore: avoid_print
-      print(stack);
+      print('[api:clearHistory] success');
+    } catch (error, stack) {
+      // ignore: avoid_print
+      print('[api:clearHistory] error=$error');
+      // ignore: avoid_print
+      print('[api:clearHistory] stack=$stack');
       rethrow;
+    } finally {
+      client.close(force: true);
     }
+  }) async {
+    await _deleteJson('/api/me/history', token: token);
   }
 
   Future<List<CampusDraft>> fetchDrafts({required String token}) async {

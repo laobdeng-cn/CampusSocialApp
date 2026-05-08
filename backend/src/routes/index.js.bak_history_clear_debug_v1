@@ -1134,45 +1134,9 @@ router.post('/me/history', requireAuth, async (request, response, next) => {
 
 router.delete('/me/history', requireAuth, async (request, response, next) => {
   try {
-    const userId = String(request.user?._id || '');
-    console.log('[history:clear] enter', {
-      userId,
-      mongoReady: isMongoReady(),
-      time: new Date().toISOString(),
-    });
-
-    const beforeCount = await BrowsingHistory.countDocuments({
-      user: request.user._id,
-    });
-
-    const result = await BrowsingHistory.deleteMany({
-      user: request.user._id,
-    });
-
-    const afterCount = await BrowsingHistory.countDocuments({
-      user: request.user._id,
-    });
-
-    console.log('[history:clear] done', {
-      userId,
-      beforeCount,
-      deletedCount: result.deletedCount,
-      afterCount,
-      time: new Date().toISOString(),
-    });
-
-    response.json({
-      success: true,
-      message: '浏览记录已清空',
-      beforeCount,
-      deletedCount: result.deletedCount || 0,
-      afterCount,
-    });
+    await BrowsingHistory.deleteMany({ user: request.user._id });
+    response.json({ success: true, message: '浏览记录已清空' });
   } catch (error) {
-    console.error('[history:clear] error', {
-      message: error?.message,
-      stack: error?.stack,
-    });
     next(error);
   }
 });
