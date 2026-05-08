@@ -6770,7 +6770,9 @@ class _DraftBoxScreenState extends State<_DraftBoxScreen> {
       if (!mounted) return;
       if (event.type == CampusEventType.profileChanged ||
           event.type == CampusEventType.feedChanged) {
-        setState(() => _future = CampusRepository.instance.fetchDrafts());
+        setState(() {
+          _future = CampusRepository.instance.fetchDrafts();
+        });
       }
     });
   }
@@ -6785,10 +6787,25 @@ class _DraftBoxScreenState extends State<_DraftBoxScreen> {
     try {
       await CampusRepository.instance.deleteDraft(draft);
       if (!mounted) return;
-      setState(() => _future = CampusRepository.instance.fetchDrafts());
+      setState(() {
+        _future = CampusRepository.instance.fetchDrafts();
+      });
       _showShellMessage(context, '草稿已删除');
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
+    }
+  }
+
+  Future<void> _openDraft(CampusDraft draft) async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => PublishPostScreen(initialDraft: draft)),
+    );
+
+    if (changed == true && mounted) {
+      setState(() {
+        _future = CampusRepository.instance.fetchDrafts();
+      });
     }
   }
 
@@ -6823,6 +6840,7 @@ class _DraftBoxScreenState extends State<_DraftBoxScreen> {
                 for (final draft in drafts) ...[
                   _DraftTile.fromDraft(
                     draft: draft,
+                    onEdit: () => _openDraft(draft),
                     onDelete: () => _deleteDraft(draft),
                   ),
                   const SizedBox(height: 12),
@@ -8407,6 +8425,7 @@ class _JoinedActivityTile extends StatelessWidget {
 
 class _DraftTile extends StatelessWidget {
   const _DraftTile({
+    this.onEdit,
     required this.title,
     required this.body,
     required this.image,
@@ -8423,12 +8442,15 @@ class _DraftTile extends StatelessWidget {
   final String action;
   final Color actionColor;
   final VoidCallback? onDelete;
+  final VoidCallback? onEdit;
 
   factory _DraftTile.fromDraft({
     required CampusDraft draft,
+    required VoidCallback onEdit,
     VoidCallback? onDelete,
   }) {
     return _DraftTile(
+      onEdit: onEdit,
       title: draft.title,
       body: draft.body.isEmpty ? '还没有填写正文内容' : draft.body,
       image: draft.images.isEmpty
@@ -8444,6 +8466,7 @@ class _DraftTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CampusCard(
+      onTap: onEdit,
       padding: const EdgeInsets.all(12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -27,7 +27,9 @@ String _friendlyError(Object error) {
 }
 
 class PublishPostScreen extends StatefulWidget {
-  const PublishPostScreen({super.key});
+  const PublishPostScreen({super.key, this.initialDraft});
+
+  final CampusDraft? initialDraft;
 
   @override
   State<PublishPostScreen> createState() => _PublishPostScreenState();
@@ -41,6 +43,39 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   final List<String> _imageUrls = [];
   var _isSubmitting = false;
   var _isUploadingImage = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fillFromInitialDraft();
+  }
+
+  void _fillFromInitialDraft() {
+    final draft = widget.initialDraft;
+    if (draft == null) return;
+
+    _titleController.text = draft.title;
+    _bodyController.text = draft.body;
+    if (draft.topic.trim().isNotEmpty) {
+      _topicController.text = draft.topic.trim();
+    }
+    if (draft.location.trim().isNotEmpty) {
+      _locationController.text = draft.location.trim();
+    }
+    _imageUrls
+      ..clear()
+      ..addAll(draft.images);
+  }
+
+  Future<void> _deleteInitialDraftQuietly() async {
+    final draft = widget.initialDraft;
+    if (draft == null || draft.id.isEmpty) return;
+    try {
+      await CampusRepository.instance.deleteDraft(draft);
+    } catch (_) {
+      // 发布/另存成功后清理旧草稿失败不影响主流程。
+    }
+  }
 
   @override
   void dispose() {
@@ -95,6 +130,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
         location: _locationController.text.trim(),
         images: _imageUrls,
       );
+      await _deleteInitialDraftQuietly();
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (error) {
@@ -124,6 +160,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
         location: _locationController.text.trim(),
         images: _imageUrls,
       );
+      await _deleteInitialDraftQuietly();
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (error) {
@@ -144,7 +181,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
           onPressed: _isSubmitting ? null : _saveDraft,
           child: const Text('草稿'),
         ),
-        title: const Text('发布动态'),
+        title: Text(widget.initialDraft == null ? '发布动态' : '继续编辑'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 14),
