@@ -28,8 +28,6 @@ class CampusRepository {
     _emitSync(CampusEventType.feedChanged);
   }
 
-
-
   void _cacheFavoriteRecords(List<CampusFavoriteRecord> favorites) {
     _cachedFavoriteActivityIds = favorites
         .where(
@@ -526,7 +524,11 @@ class CampusRepository {
       activityId: id,
       text: text,
     );
-    _emitSync(CampusEventType.activityCommentChanged, refId: id, payload: comment);
+    _emitSync(
+      CampusEventType.activityCommentChanged,
+      refId: id,
+      payload: comment,
+    );
     _emitSync(CampusEventType.notificationChanged);
     return comment;
   }
@@ -699,7 +701,9 @@ class CampusRepository {
     _emitSync(CampusEventType.notificationChanged);
   }
 
-  Future<CampusNotificationRecord> markNotificationRead(String notificationId) async {
+  Future<CampusNotificationRecord> markNotificationRead(
+    String notificationId,
+  ) async {
     if (notificationId.isEmpty) {
       throw const CampusApiException('这条通知暂未同步到后端');
     }
@@ -783,9 +787,10 @@ class CampusRepository {
 
   Future<CampusGroup> fetchGroupDetail(CampusGroup group) async {
     final id = _requireGroupId(group);
-    return _enrichGroup(
+    final detail = _enrichGroup(
       await _apiClient.fetchGroupDetail(id, token: AuthSession.token),
     );
+    return _replaceCachedGroup(detail);
   }
 
   Future<CampusGroup> createGroup({
@@ -985,10 +990,22 @@ class CampusRepository {
       approved: approved,
     );
 
-    _emitSync(CampusEventType.groupChanged, refId: groupId);
-    _emitSync(CampusEventType.notificationChanged);
-    _emitFeedChanged();
+    try {
+      final detail = await _apiClient.fetchGroupDetail(
+        groupId,
+        token: AuthSession.token,
+      );
+      _replaceCachedGroup(detail);
+    } catch (_) {
+      if (approved) {
+        _replaceCachedGroup(group.copyWith(members: group.members + 1));
+      } else {
+        _emitSync(CampusEventType.groupChanged, refId: groupId);
+        _emitFeedChanged();
+      }
+    }
 
+    _emitSync(CampusEventType.notificationChanged);
     return member;
   }
 
@@ -1030,8 +1047,22 @@ class CampusRepository {
       membershipId: member.id,
     );
 
-    _emitSync(CampusEventType.groupChanged, refId: groupId);
-    _emitFeedChanged();
+    try {
+      final detail = await _apiClient.fetchGroupDetail(
+        groupId,
+        token: AuthSession.token,
+      );
+      _replaceCachedGroup(detail);
+    } catch (_) {
+      _replaceCachedGroup(
+        group.copyWith(
+          members: group.members <= 0 ? 0 : group.members - 1,
+          admins: member.role == 'admin' && group.admins > 0
+              ? group.admins - 1
+              : group.admins,
+        ),
+      );
+    }
   }
 
   Future<CampusTopic> fetchTopicDetail(CampusTopic topic) async {
@@ -1341,32 +1372,30 @@ class CampusRepository {
     );
     _emitSync(CampusEventType.activityChanged, refId: activityId);
     _emitFeedChanged();
-
   }
 
   CampusGroup _replaceCachedGroup(CampusGroup nextGroup) {
     final enriched = _enrichGroup(nextGroup);
+    final exists = _cachedFeed.groups.any((group) => group.id == enriched.id);
+
     _cachedFeed = CampusFeed(
       users: _cachedFeed.users,
       posts: _cachedFeed.posts,
       activities: _cachedFeed.activities,
-      groups: _cachedFeed.groups
-          .map((group) => group.id == enriched.id ? enriched : group)
-          .toList(growable: false),
+      groups: exists
+          ? _cachedFeed.groups
+                .map((group) => group.id == enriched.id ? enriched : group)
+                .toList(growable: false)
+          : [enriched, ..._cachedFeed.groups],
       topics: _cachedFeed.topics,
     );
 
-    if (enriched.id.isNotEmpty) {
-      _emitSync(
-        CampusEventType.groupChanged,
-        refId: enriched.id,
-        payload: enriched,
-      );
-    } else {
-      _emitSync(CampusEventType.groupChanged, payload: enriched);
-    }
+    _emitSync(
+      CampusEventType.groupChanged,
+      refId: enriched.id,
+      payload: enriched,
+    );
     _emitFeedChanged();
-
     return enriched;
   }
 
@@ -1382,7 +1411,6 @@ class CampusRepository {
     );
     _emitSync(CampusEventType.groupChanged, refId: groupId);
     _emitFeedChanged();
-
   }
 
   String _requireToken() {

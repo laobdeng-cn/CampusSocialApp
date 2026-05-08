@@ -917,12 +917,26 @@ class CommunityScreen extends StatefulWidget {
 
 class _CommunityScreenState extends State<CommunityScreen> {
   CampusDiscover? _discover;
+  StreamSubscription<CampusDataEvent>? _communitySubscription;
   var _isLoadingDiscover = false;
 
   @override
   void initState() {
     super.initState();
     _loadDiscover();
+    _communitySubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted) return;
+      if (event.type == CampusEventType.groupChanged ||
+          event.type == CampusEventType.feedChanged) {
+        _loadDiscover();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _communitySubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadDiscover() async {
@@ -938,6 +952,18 @@ class _CommunityScreenState extends State<CommunityScreen> {
   Future<void> _refresh() async {
     await widget.onRefresh();
     await _loadDiscover();
+  }
+
+  CampusGroup _syncCommunityGroupState(CampusGroup group) {
+    if (group.id.isEmpty) return group;
+
+    for (final cached in CampusRepository.instance.cachedFeed.groups) {
+      if (cached.id == group.id) {
+        return cached;
+      }
+    }
+
+    return group;
   }
 
   @override
@@ -963,8 +989,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
               .toList(growable: false);
     final selectedTopic = topics.isEmpty ? campusTopic : topics.first;
     final recommendedGroups = groups.isEmpty
-        ? [programmingGroup]
-        : groups.take(3).toList(growable: false);
+        ? [_syncCommunityGroupState(programmingGroup)]
+        : groups.take(3).map(_syncCommunityGroupState).toList(growable: false);
     final discussionPosts = posts.take(3).toList(growable: false);
 
     return Scaffold(
@@ -10520,12 +10546,7 @@ class _GroupTileState extends State<_GroupTile> {
   @override
   void didUpdateWidget(covariant _GroupTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.group.id != widget.group.id ||
-        oldWidget.group.joined != widget.group.joined ||
-        oldWidget.group.membershipStatus != widget.group.membershipStatus ||
-        oldWidget.group.members != widget.group.members) {
-      _group = widget.group;
-    }
+    _group = widget.group;
   }
 
   @override
@@ -10574,7 +10595,10 @@ class _GroupTileState extends State<_GroupTile> {
       title: Text(widget.name ?? '摄影爱好者联盟'),
       subtitle: Text(widget.subtitle),
       trailing: FilledButton(
-        onPressed: _group.membershipStatus == 'pending' || _isSubmitting
+        onPressed:
+            _group.joined ||
+                _group.membershipStatus == 'pending' ||
+                _isSubmitting
             ? null
             : _toggleJoin,
         style: FilledButton.styleFrom(

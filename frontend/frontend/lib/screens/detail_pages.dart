@@ -1793,11 +1793,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   Widget build(BuildContext context) {
     final group = _group;
     final announcementText = group.announcementText.trim();
-    final sortedDiscussions = [...group.discussions]
-      ..sort((left, right) {
-        if (left.pinnedInGroup == right.pinnedInGroup) return 0;
-        return left.pinnedInGroup ? -1 : 1;
-      });
+    final sortedDiscussions =
+        group.discussions
+            .where(
+              (post) =>
+                  post.title.trim().isNotEmpty || post.body.trim().isNotEmpty,
+            )
+            .toList(growable: true)
+          ..sort((left, right) {
+            if (left.pinnedInGroup == right.pinnedInGroup) return 0;
+            return left.pinnedInGroup ? -1 : 1;
+          });
 
     return Scaffold(
       body: Stack(
@@ -1945,20 +1951,29 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             style: TextStyle(color: AppColors.muted),
                           ),
                         ),
-                        CampusCard(
-                          child: Column(
-                            children:
-                                (group.activities.isEmpty
-                                        ? [campusActivity]
-                                        : group.activities)
-                                    .map(
-                                      (activity) => _GroupActivityTile(
-                                        activity: activity,
-                                      ),
-                                    )
-                                    .toList(growable: false),
+                        if (group.activities.isEmpty)
+                          const CampusCard(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 18),
+                              child: Center(
+                                child: Text(
+                                  '暂无即将开展的活动',
+                                  style: TextStyle(color: AppColors.muted),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          CampusCard(
+                            child: Column(
+                              children: group.activities
+                                  .map(
+                                    (activity) =>
+                                        _GroupActivityTile(activity: activity),
+                                  )
+                                  .toList(growable: false),
+                            ),
                           ),
-                        ),
                         const SectionTitle(
                           title: '热门讨论',
                           padding: EdgeInsets.fromLTRB(0, 22, 0, 12),
@@ -1967,14 +1982,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                             style: TextStyle(color: AppColors.muted),
                           ),
                         ),
-                        CampusCard(
-                          child: Column(
-                            children: [
-                              for (final post in sortedDiscussions)
-                                _SimpleDiscussionTile(post: post),
-                            ],
+                        if (sortedDiscussions.isEmpty)
+                          const CampusCard(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 18),
+                              child: Center(
+                                child: Text(
+                                  '暂无热门讨论',
+                                  style: TextStyle(color: AppColors.muted),
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          CampusCard(
+                            child: Column(
+                              children: [
+                                for (final post in sortedDiscussions)
+                                  _SimpleDiscussionTile(post: post),
+                              ],
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -3193,6 +3221,16 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
   }
 
   Future<void> _review(CampusGroupMember request, bool approved) async {
+    final previousFuture = _future;
+
+    setState(() {
+      _future = previousFuture.then(
+        (items) => items
+            .where((item) => item.id != request.id)
+            .toList(growable: false),
+      );
+    });
+
     try {
       await CampusRepository.instance.reviewGroupJoinRequest(
         group: widget.group,
@@ -3203,7 +3241,9 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
       _showMessage(context, approved ? '已通过入群申请' : '已拒绝入群申请');
       _refresh();
     } catch (error) {
-      if (mounted) _showMessage(context, _friendlyError(error));
+      if (!mounted) return;
+      setState(() => _future = previousFuture);
+      _showMessage(context, _friendlyError(error));
     }
   }
 
@@ -5072,6 +5112,20 @@ class _TicketInfoRow extends StatelessWidget {
       ],
     );
   }
+}
+
+String _groupActivityActionText(CampusActivity activity) {
+  if (activity.isCheckedIn) return '已签到';
+  if (activity.isEnded) return '已结束';
+  if (activity.activityStatus == 'registered' ||
+      activity.isCheckInNotStarted ||
+      activity.isCheckInAvailable) {
+    return '已报名';
+  }
+  if (activity.capacity > 0 && activity.enrolled >= activity.capacity) {
+    return '已满员';
+  }
+  return '去报名';
 }
 
 class _GroupActivityTile extends StatelessWidget {
