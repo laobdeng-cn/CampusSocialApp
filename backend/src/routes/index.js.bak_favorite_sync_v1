@@ -1,6 +1,5 @@
 const _stageImageFallback = 'asset:assets/images/activity_stage_blue.png';
 const express = require('express');
-const mongoose = require('mongoose');
 const fs = require('fs');
 const multer = require('multer');
 const path = require('path');
@@ -955,15 +954,6 @@ router.post('/posts', requireAuth, async (request, response, next) => {
 
 router.post('/posts/:id/like', requireAuth, async (request, response, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
-      console.warn('[posts:like] invalid id', {
-        postId: request.params.id,
-        userId: String(request.user?._id || ''),
-      });
-      response.status(404).json({ message: '帖子不存在或暂未同步到后端' });
-      return;
-    }
-
     const post = await findPostOr404(request.params.id, response);
     if (!post) return;
 
@@ -987,15 +977,6 @@ router.post('/posts/:id/like', requireAuth, async (request, response, next) => {
 
 router.post('/posts/:id/favorite', requireAuth, async (request, response, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
-      console.warn('[posts:favorite] invalid id', {
-        postId: request.params.id,
-        userId: String(request.user?._id || ''),
-      });
-      response.status(404).json({ message: '帖子不存在或暂未同步到后端' });
-      return;
-    }
-
     const post = await findPostOr404(request.params.id, response);
     if (!post) return;
 
@@ -1284,12 +1265,6 @@ router.delete('/me/drafts/:id', requireAuth, async (request, response, next) => 
 
 router.get('/posts/:id/comments', async (request, response, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
-      console.warn('[posts:comments:list] invalid id', { postId: request.params.id });
-      response.json({ comments: [] });
-      return;
-    }
-
     const comments = await Comment.find({ post: request.params.id })
       .populate('author')
       .sort({ createdAt: -1 })
@@ -1304,15 +1279,6 @@ router.get('/posts/:id/comments', async (request, response, next) => {
 
 router.post('/posts/:id/comments', requireAuth, async (request, response, next) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(request.params.id)) {
-      console.warn('[posts:comments:create] invalid id', {
-        postId: request.params.id,
-        userId: String(request.user?._id || ''),
-      });
-      response.status(404).json({ message: '帖子不存在或暂未同步到后端' });
-      return;
-    }
-
     const text = String(request.body.text || '').trim();
     if (!text) {
       response.status(400).json({ message: '评论内容不能为空' });

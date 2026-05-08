@@ -53,30 +53,6 @@ String _shellError(Object error) {
   return '操作失败，请确认后端服务已启动';
 }
 
-String _shellFriendlyTime(String value) {
-  final raw = value.trim();
-  if (raw.isEmpty) return '刚刚';
-
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return raw;
-
-  final time = parsed.toLocal();
-  final now = DateTime.now();
-  final diff = now.difference(time);
-
-  if (diff.inSeconds < 60) return '刚刚';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-  if (diff.inHours < 24 &&
-      now.year == time.year &&
-      now.month == time.month &&
-      now.day == time.day) {
-    return '今天 ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-  if (diff.inDays < 7) return '${diff.inDays}天前';
-
-  return '${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-}
-
 class CampusShell extends StatefulWidget {
   const CampusShell({super.key});
 
@@ -85,24 +61,14 @@ class CampusShell extends StatefulWidget {
 }
 
 class _CampusShellState extends State<CampusShell> {
-  StreamSubscription<CampusDataEvent>? _homeRefreshSubscription;
-
   int _currentIndex = 0;
   CampusFeed _feed = CampusRepository.instance.cachedFeed;
   bool _isRefreshing = false;
   StreamSubscription<CampusDataEvent>? _feedSubscription;
 
-  void _bindHomeRealtimeRefresh() {
-    // 不在事件总线上再次发起网络刷新。
-    // createPost/deletePost/updatePost 已经会更新 cachedFeed，
-    // _feedSubscription 只需要把 cachedFeed 同步到页面即可。
-    // 这样可以避免 fetchMyPosts / fetchFeed 之间互相触发导致页面一直转圈、卡顿。
-  }
-
   @override
   void initState() {
     super.initState();
-    _bindHomeRealtimeRefresh();
     campusTabIndexNotifier.addListener(_syncExternalTabIndex);
     _refreshFeed();
     _feedSubscription = CampusEventBus.instance.stream.listen((event) {
@@ -123,7 +89,6 @@ class _CampusShellState extends State<CampusShell> {
   void dispose() {
     campusTabIndexNotifier.removeListener(_syncExternalTabIndex);
     _feedSubscription?.cancel();
-    _homeRefreshSubscription?.cancel();
     super.dispose();
   }
 
@@ -146,24 +111,13 @@ class _CampusShellState extends State<CampusShell> {
   }
 
   Future<void> _refreshFeed() async {
-    if (_isRefreshing) return;
-    if (mounted) {
-      setState(() => _isRefreshing = true);
-    }
-
-    try {
-      final feed = await CampusRepository.instance.fetchFeed();
-      if (!mounted) return;
-      setState(() {
-        _feed = feed;
-      });
-    } catch (error) {
-      if (mounted) _showShellMessage(context, _shellError(error));
-    } finally {
-      if (mounted) {
-        setState(() => _isRefreshing = false);
-      }
-    }
+    setState(() => _isRefreshing = true);
+    final feed = await CampusRepository.instance.fetchFeed();
+    if (!mounted) return;
+    setState(() {
+      _feed = feed;
+      _isRefreshing = false;
+    });
   }
 
   @override
@@ -315,39 +269,11 @@ class HomeScreen extends StatelessWidget {
                 padding: kPagePadding,
                 child: Column(
                   children: [
-                    if (posts.isEmpty)
-                      CampusCard(
-                        padding: const EdgeInsets.fromLTRB(18, 28, 18, 28),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.article_outlined,
-                              color: AppColors.muted,
-                              size: 42,
-                            ),
-                            SizedBox(height: 10),
-                            Text(
-                              '暂无真实校园动态',
-                              style: TextStyle(
-                                color: AppColors.ink,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              '发布一条帖子后，会自动显示在这里',
-                              style: TextStyle(color: AppColors.muted),
-                            ),
-                          ],
-                        ),
-                      )
-                    else
-                      for (final post in posts)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: PostFeedCard(post: post),
-                        ),
+                    for (final post in posts)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 14),
+                        child: PostFeedCard(post: post),
+                      ),
                   ],
                 ),
               ),
@@ -878,97 +804,6 @@ class _HotActivitiesPanel extends StatelessWidget {
                 onChanged: onChanged,
               ),
             ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class ActivityListCard extends StatelessWidget {
-  const ActivityListCard({
-    required this.activity,
-    required this.onChanged,
-    super.key,
-  });
-
-  final CampusActivity activity;
-  final Future<void> Function() onChanged;
-
-  Future<void> _openDetail(BuildContext context) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ActivityDetailScreen(activity: activity),
-      ),
-    );
-    await onChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () => _openDetail(context),
-      borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            SmartImage(url: activity.posterUrl, width: 92, height: 72),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activity.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    activity.host,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.people_alt_outlined,
-                        color: AppColors.muted,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${activity.enrolled}人已报名',
-                        style: const TextStyle(
-                          color: AppColors.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.muted,
-              size: 24,
-            ),
           ],
         ),
       ),
@@ -5290,796 +5125,55 @@ class UserProfileScreen extends StatefulWidget {
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
   int _selectedTab = 0;
-  late Future<_RealUserProfileBundle> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
 
   static const _tabs = ['动态', '帖子', '活动', '相册'];
 
-  bool get _isCurrentProfile {
-    final authUser = AuthSession.user;
-    if (authUser == null) return false;
-
-    if (widget.user.id.isNotEmpty && authUser.id.isNotEmpty) {
-      return widget.user.id == authUser.id;
-    }
-
-    return widget.user.name == authUser.name;
-  }
-
-  CampusUser get _displayUser {
-    if (_isCurrentProfile) return AuthSession.user ?? widget.user;
-    return widget.user;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _loadProfile();
-
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.profileChanged ||
-          event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.activityChanged) {
-        _refresh();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  Future<void> _refresh() async {
-    final next = _loadProfile();
-    setState(() => _future = next);
-    await next;
-  }
-
-  Future<_RealUserProfileBundle> _loadProfile() async {
-    final user = _displayUser;
-
-    // 当前后端已有的是“我的”相关接口。
-    // 如果打开的是别人的主页，先只展示真实用户信息，不混入演示动态。
-    if (!_isCurrentProfile) {
-      return _RealUserProfileBundle.empty(user);
-    }
-
-    try {
-      final repo = CampusRepository.instance;
-
-      final results = await Future.wait<Object>([
-        repo.fetchMyPosts(),
-        repo.fetchMyActivities(),
-        repo.fetchCreatedActivities(),
-        repo.fetchFollowing(),
-        repo.fetchFollowers(),
-        repo.fetchLikesReceived(),
-      ]);
-
-      final posts = results[0] as List<CampusPost>;
-      final joinedActivities = results[1] as List<CampusActivity>;
-      final createdActivities = results[2] as List<CampusActivity>;
-      final following = results[3] as List<CampusUser>;
-      final followers = results[4] as List<CampusUser>;
-      final likesReceived = results[5] as List<CampusLikeRecord>;
-
-      final activityMap = <String, CampusActivity>{};
-      for (final activity in [...joinedActivities, ...createdActivities]) {
-        final key = activity.id.isNotEmpty
-            ? activity.id
-            : '${activity.title}|${activity.date}|${activity.time}';
-        activityMap[key] = activity;
-      }
-
-      return _RealUserProfileBundle(
-        user: AuthSession.user ?? user,
-        posts: posts,
-        activities: activityMap.values.toList(growable: false),
-        followingCount: following.length,
-        followersCount: followers.length,
-        likesReceivedCount: likesReceived.length,
-      );
-    } catch (error) {
-      return _RealUserProfileBundle.empty(
-        user,
-        errorMessage: _shellError(error),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<_RealUserProfileBundle>(
-      future: _future,
-      builder: (context, snapshot) {
-        final bundle =
-            snapshot.data ?? _RealUserProfileBundle.empty(_displayUser);
-        final isLoading =
-            snapshot.connectionState == ConnectionState.waiting &&
-            snapshot.data == null;
-
-        return Scaffold(
-          backgroundColor: Colors.white,
-          body: RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                if (isLoading) const LinearProgressIndicator(minHeight: 2),
-                _buildHeader(bundle),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                  child: Column(
-                    children: [
-                      if (bundle.errorMessage != null) ...[
-                        const SizedBox(height: 8),
-                        CampusCard(
-                          child: Text(
-                            bundle.errorMessage!,
-                            style: const TextStyle(color: AppColors.red),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 8),
-                      _buildShortcutCard(bundle.user),
-                      const SizedBox(height: 8),
-                      _buildIntroCard(bundle.user),
-                      const SizedBox(height: 8),
-                      CampusCard(
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          children: [
-                            _buildTabBar(),
-                            const Divider(height: 1),
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(
-                                14,
-                                14,
-                                14,
-                                16,
-                              ),
-                              child: _buildTabContent(bundle),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-              ],
-            ),
-          ),
-          bottomNavigationBar: BottomTabs(
-            currentIndex: 4,
-            onTap: (index) => navigateToTab(context, index),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildHeader(_RealUserProfileBundle bundle) {
-    final user = bundle.user;
-    final top = MediaQuery.paddingOf(context).top;
-
-    return Stack(
-      children: [
-        Container(
-          height: top + 172,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFFEAF4FF), Color(0xFFFFFFFF)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-          ),
-        ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(18, top + 18, 18, 0),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.maybePop(context),
-                    child: const Icon(
-                      Icons.chevron_left_rounded,
-                      color: AppColors.ink,
-                      size: 36,
-                    ),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.ios_share_rounded),
-                  ),
-                  IconButton(
-                    onPressed: () {},
-                    icon: const Icon(Icons.more_horiz),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  CampusAvatar(user: user, size: 96),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                user.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.ink,
-                                  fontSize: 28,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Pill(
-                              label: user.school.isEmpty
-                                  ? '未认证学校'
-                                  : user.school,
-                              color: AppColors.blue,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          [
-                                if (user.major.trim().isNotEmpty) user.major,
-                                if (user.grade.trim().isNotEmpty) user.grade,
-                              ].join(' · ').isEmpty
-                              ? '未填写专业信息'
-                              : [
-                                  if (user.major.trim().isNotEmpty) user.major,
-                                  if (user.grade.trim().isNotEmpty) user.grade,
-                                ].join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppColors.muted),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          user.bio.trim().isEmpty
-                              ? '这个同学还没有填写简介。'
-                              : user.bio.trim(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: AppColors.text,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              CampusCard(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 14,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _buildStat('${bundle.followingCount}', '关注'),
-                    _buildStat('${bundle.followersCount}', '粉丝'),
-                    _buildStat('${bundle.likesReceivedCount}', '获赞'),
-                    _buildStat('${bundle.activities.length}', '活动'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStat(String value, String label) {
-    return Expanded(
-      child: Column(
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: ListView(
+        padding: EdgeInsets.zero,
         children: [
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.ink,
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(label, style: const TextStyle(color: AppColors.muted)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShortcutCard(CampusUser user) {
-    return CampusCard(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _MyShortcut(
-            icon: Icons.article_outlined,
-            label: '我的帖子',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => _MyPostsScreen(user: user)),
-              );
-            },
-          ),
-          _MyShortcut(
-            icon: Icons.chat_bubble_outline,
-            label: '我的评论',
-            color: AppColors.green,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => _MyCommentsScreen(user: user),
-                ),
-              );
-            },
-          ),
-          _MyShortcut(
-            icon: Icons.star_border_rounded,
-            label: '我的收藏',
-            color: AppColors.orange,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => _MyFavoritesScreen(user: user),
-                ),
-              );
-            },
-          ),
-          _MyShortcut(
-            icon: Icons.history,
-            label: '浏览记录',
-            color: AppColors.blueDark,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const _BrowsingHistoryScreen(),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIntroCard(CampusUser user) {
-    return CampusCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '个人简介',
-            style: TextStyle(
-              color: AppColors.ink,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            user.bio.trim().isEmpty ? '这个同学还没有填写简介。' : user.bio.trim(),
-            style: const TextStyle(
-              color: AppColors.text,
-              fontSize: 15,
-              height: 1.55,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 14),
-          const Divider(),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            children: [
-              _infoChip(Icons.school_outlined, user.school),
-              _infoChip(Icons.menu_book_outlined, user.major),
-              _infoChip(Icons.workspace_premium_outlined, user.grade),
-              if (user.role?.trim().isNotEmpty == true)
-                _infoChip(Icons.verified_user_outlined, user.role!),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoChip(IconData icon, String value) {
-    final label = value.trim().isEmpty ? '未填写' : value.trim();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.blue.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppColors.blue, size: 16),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.blue,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabBar() {
-    return Row(
-      children: [
-        for (var index = 0; index < _tabs.length; index++)
-          Expanded(
-            child: InkWell(
-              onTap: () => setState(() => _selectedTab = index),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Column(
-                  children: [
-                    Text(
-                      _tabs[index],
-                      style: TextStyle(
-                        color: _selectedTab == index
-                            ? AppColors.blue
-                            : AppColors.muted,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: _selectedTab == index ? 30 : 0,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.blue,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildTabContent(_RealUserProfileBundle bundle) {
-    return switch (_selectedTab) {
-      2 => _buildActivityList(bundle.activities),
-      3 => _buildAlbumEmpty(),
-      _ => _buildPostList(bundle.posts),
-    };
-  }
-
-  Widget _buildPostList(List<CampusPost> posts) {
-    if (posts.isEmpty) {
-      return _buildEmptyState(
-        icon: Icons.article_outlined,
-        title: '暂无真实动态',
-        subtitle: '发布帖子后，会自动显示在这里',
-      );
-    }
-
-    return Column(
-      children: [
-        for (final post in posts) ...[
-          _ProfileRealPostTile(post: post),
-          if (post != posts.last) const Divider(height: 26),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildActivityList(List<CampusActivity> activities) {
-    if (activities.isEmpty) {
-      return _buildEmptyState(
-        icon: Icons.event_available_outlined,
-        title: '暂无真实活动',
-        subtitle: '报名或创建活动后，会自动显示在这里',
-      );
-    }
-
-    return Column(
-      children: [
-        for (final activity in activities) ...[
-          _ProfileRealActivityTile(activity: activity),
-          if (activity != activities.last) const Divider(height: 26),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildAlbumEmpty() {
-    return _buildEmptyState(
-      icon: Icons.photo_library_outlined,
-      title: '暂无真实相册',
-      subtitle: '当前后端还没有相册接口，暂不展示演示图片',
-    );
-  }
-
-  Widget _buildEmptyState({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 34, horizontal: 16),
-      child: Column(
-        children: [
-          Icon(icon, color: AppColors.muted, size: 42),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.ink,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.muted),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RealUserProfileBundle {
-  const _RealUserProfileBundle({
-    required this.user,
-    required this.posts,
-    required this.activities,
-    required this.followingCount,
-    required this.followersCount,
-    required this.likesReceivedCount,
-    this.errorMessage,
-  });
-
-  final CampusUser user;
-  final List<CampusPost> posts;
-  final List<CampusActivity> activities;
-  final int followingCount;
-  final int followersCount;
-  final int likesReceivedCount;
-  final String? errorMessage;
-
-  factory _RealUserProfileBundle.empty(
-    CampusUser user, {
-    String? errorMessage,
-  }) {
-    return _RealUserProfileBundle(
-      user: user,
-      posts: const [],
-      activities: const [],
-      followingCount: user.following,
-      followersCount: user.followers,
-      likesReceivedCount: 0,
-      errorMessage: errorMessage,
-    );
-  }
-}
-
-class _ProfileRealPostTile extends StatelessWidget {
-  const _ProfileRealPostTile({required this.post});
-
-  final CampusPost post;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
-        );
-      },
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CampusAvatar(user: post.author, size: 42),
-          const SizedBox(width: 12),
-          Expanded(
+          _UserProfileHeader(user: widget.user),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      post.author.name,
-                      style: const TextStyle(
-                        color: AppColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _shellFriendlyTime(post.createdAt),
-                      style: const TextStyle(color: AppColors.muted),
-                    ),
-                    const SizedBox(width: 8),
-                    _CompactBadge(
-                      label: '# ${post.topic}',
-                      color: AppColors.blue,
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.more_horiz, color: AppColors.muted),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  post.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                _ProfileShortcutCard(user: widget.user),
+                if (_selectedTab == 0) ...[
+                  const SizedBox(height: 8),
+                  const _ProfileIntroCard(),
+                ],
                 const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        post.body,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.text,
-                          fontSize: 14,
-                          height: 1.45,
-                        ),
-                      ),
+                _ProfileTabbedCard(
+                  tabs: _tabs,
+                  selectedTab: _selectedTab,
+                  onTabChanged: (index) {
+                    setState(() => _selectedTab = index);
+                  },
+                  child: switch (_selectedTab) {
+                    1 => _ProfilePostList(
+                      user: widget.user,
+                      showThirdPost: true,
                     ),
-                    if (post.images.isNotEmpty) ...[
-                      const SizedBox(width: 12),
-                      SmartImage(
-                        url: post.images.first,
-                        width: 108,
-                        height: 82,
-                        borderRadius: 10,
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    _ProfileActionMetric(
-                      icon: Icons.favorite_border_rounded,
-                      value: post.likes,
+                    2 => const _ProfileActivityList(),
+                    3 => const _ProfileAlbumList(),
+                    _ => _ProfilePostList(
+                      user: widget.user,
+                      showThirdPost: false,
                     ),
-                    const SizedBox(width: 28),
-                    _ProfileActionMetric(
-                      icon: Icons.mode_comment_outlined,
-                      value: post.comments,
-                    ),
-                    const SizedBox(width: 28),
-                    _ProfileActionMetric(
-                      icon: Icons.star_border_rounded,
-                      value: post.saves,
-                    ),
-                  ],
+                  },
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 16),
         ],
       ),
-    );
-  }
-}
-
-class _ProfileRealActivityTile extends StatelessWidget {
-  const _ProfileRealActivityTile({required this.activity});
-
-  final CampusActivity activity;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ActivityDetailScreen(activity: activity),
-          ),
-        );
-      },
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SmartImage(
-            url: activity.posterUrl,
-            width: 92,
-            height: 76,
-            borderRadius: 12,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  activity.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  '${activity.date} ${activity.time}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.muted),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  activity.location,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.text),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '${activity.enrolled}/${activity.capacity} 人报名',
-                  style: const TextStyle(
-                    color: AppColors.blue,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
-        ],
+      bottomNavigationBar: BottomTabs(
+        currentIndex: 4,
+        onTap: (index) => navigateToTab(context, index),
       ),
     );
   }
@@ -11377,22 +10471,75 @@ class PostFeedCard extends StatefulWidget {
 
 class _PostFeedCardState extends State<PostFeedCard> {
   late CampusPost _post = widget.post;
-  late bool _liked = widget.post.likes > 0;
-  late bool _favorited = widget.post.saves > 0;
+  var _liked = false;
+  var _favorited = false;
   var _isLiking = false;
   var _isFavoriting = false;
+  StreamSubscription<CampusDataEvent>? _subscription;
+
+  @override
+  @override
+  void initState() {
+    super.initState();
+    _loadFavoriteStatus();
+    _subscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted) return;
+
+      if (event.type == CampusEventType.postChanged &&
+          (event.refId.isEmpty || event.refId == _post.id)) {
+        final payload = event.payload;
+        if (payload is CampusPost) {
+          setState(() => _post = payload);
+        }
+        _loadFavoriteStatus();
+        return;
+      }
+
+      if (event.type == CampusEventType.feedChanged ||
+          event.type == CampusEventType.profileChanged) {
+        _loadFavoriteStatus();
+      }
+    });
+  }
 
   @override
   void didUpdateWidget(covariant PostFeedCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.post.id != widget.post.id ||
         oldWidget.post.likes != widget.post.likes ||
+        oldWidget.post.comments != widget.post.comments ||
         oldWidget.post.saves != widget.post.saves ||
-        oldWidget.post.comments != widget.post.comments) {
+        oldWidget.post.title != widget.post.title ||
+        oldWidget.post.body != widget.post.body) {
       _post = widget.post;
-      _liked = widget.post.likes > 0;
-      _favorited = widget.post.saves > 0;
+      _liked = false;
+      _loadFavoriteStatus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadFavoriteStatus() async {
+    final id = _post.id;
+    if (id.isEmpty) return;
+
+    try {
+      final favorites = await CampusRepository.instance.fetchFavorites();
+      if (!mounted || _post.id != id) return;
+
+      final favorited = favorites.any((record) {
+        return record.kind == 'post' && record.post.id == id;
+      });
+
+      if (_favorited != favorited) {
+        setState(() => _favorited = favorited);
+      }
+    } catch (_) {
+      // 收藏状态加载失败不影响首页卡片主流程。
     }
   }
 
@@ -11401,20 +10548,28 @@ class _PostFeedCardState extends State<PostFeedCard> {
 
     final previousPost = _post;
     final previousLiked = _liked;
+    final nextLiked = !previousLiked;
 
     setState(() {
       _isLiking = true;
-      _liked = !_liked;
-      final nextLikes = _post.likes + (_liked ? 1 : -1);
+      _liked = nextLiked;
+      final nextLikes = _post.likes + (nextLiked ? 1 : -1);
       _post = _post.copyWith(likes: nextLikes < 0 ? 0 : nextLikes);
     });
 
     try {
       final post = await CampusRepository.instance.togglePostLike(previousPost);
       if (!mounted) return;
+
       setState(() {
         _post = post;
-        _liked = post.likes > previousPost.likes || post.likes > 0;
+        if (post.likes > previousPost.likes) {
+          _liked = true;
+        } else if (post.likes < previousPost.likes) {
+          _liked = false;
+        } else {
+          _liked = nextLiked;
+        }
       });
     } catch (error) {
       if (!mounted) return;
@@ -11433,11 +10588,12 @@ class _PostFeedCardState extends State<PostFeedCard> {
 
     final previousPost = _post;
     final previousFavorited = _favorited;
+    final nextFavorited = !previousFavorited;
 
     setState(() {
       _isFavoriting = true;
-      _favorited = !_favorited;
-      final nextSaves = _post.saves + (_favorited ? 1 : -1);
+      _favorited = nextFavorited;
+      final nextSaves = _post.saves + (nextFavorited ? 1 : -1);
       _post = _post.copyWith(saves: nextSaves < 0 ? 0 : nextSaves);
     });
 
@@ -11446,11 +10602,20 @@ class _PostFeedCardState extends State<PostFeedCard> {
         previousPost,
       );
       if (!mounted) return;
+
       setState(() {
         _post = post;
-        _favorited = post.saves > previousPost.saves || post.saves > 0;
+        if (post.saves > previousPost.saves) {
+          _favorited = true;
+        } else if (post.saves < previousPost.saves) {
+          _favorited = false;
+        } else {
+          _favorited = nextFavorited;
+        }
       });
+
       _showShellMessage(context, _favorited ? '已收藏' : '已取消收藏');
+      _loadFavoriteStatus();
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -11463,31 +10628,16 @@ class _PostFeedCardState extends State<PostFeedCard> {
     }
   }
 
-  Future<void> _openDetail() async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => PostDetailScreen(post: _post)),
-    );
-
-    if (changed == true && mounted) {
-      setState(() {
-        _post = _post.copyWith(
-          likes: _post.likes,
-          comments: _post.comments,
-          saves: _post.saves,
-        );
-        _liked = _post.likes > 0;
-        _favorited = _post.saves > 0;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final post = _post;
-
     return CampusCard(
-      onTap: _openDetail,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+        );
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -11514,7 +10664,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      _shellFriendlyTime(post.createdAt),
+                      post.createdAt,
                       style: const TextStyle(
                         color: AppColors.muted,
                         fontSize: 12,
@@ -11530,33 +10680,27 @@ class _PostFeedCardState extends State<PostFeedCard> {
           Text(post.title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
           Text(post.body, maxLines: 2, overflow: TextOverflow.ellipsis),
-          if (post.images.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            if (post.images.length >= 3)
-              Row(
-                children: [
-                  for (var i = 0; i < 3; i++) ...[
-                    Expanded(
-                      child: SmartImage(url: post.images[i], height: 92),
-                    ),
-                    if (i != 2) const SizedBox(width: 8),
-                  ],
+          const SizedBox(height: 12),
+          if (post.images.length >= 3)
+            Row(
+              children: [
+                for (var i = 0; i < 3; i++) ...[
+                  Expanded(child: SmartImage(url: post.images[i], height: 92)),
+                  if (i != 2) const SizedBox(width: 8),
                 ],
-              )
-            else
-              SmartImage(
-                url: post.images.first,
-                height: 142,
-                width: double.infinity,
-              ),
-          ],
+              ],
+            )
+          else if (post.images.isNotEmpty)
+            SmartImage(
+              url: post.images.first,
+              height: 142,
+              width: double.infinity,
+            ),
           const SizedBox(height: 12),
           Row(
             children: [
               _InlineInteractionButton(
-                icon: _isLiking
-                    ? Icons.hourglass_top_rounded
-                    : (_liked ? Icons.favorite : Icons.favorite_border_rounded),
+                icon: _liked ? Icons.favorite : Icons.favorite_border_rounded,
                 label: '${post.likes}',
                 color: _liked ? AppColors.red : AppColors.text,
                 isLoading: _isLiking,
@@ -11566,15 +10710,20 @@ class _PostFeedCardState extends State<PostFeedCard> {
               _InlineInteractionButton(
                 icon: Icons.mode_comment_outlined,
                 label: '${post.comments}',
-                onTap: _openDetail,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostDetailScreen(post: post),
+                    ),
+                  );
+                },
               ),
               const SizedBox(width: 12),
               _InlineInteractionButton(
-                icon: _isFavoriting
-                    ? Icons.hourglass_top_rounded
-                    : (_favorited
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded),
+                icon: _favorited
+                    ? Icons.star_rounded
+                    : Icons.star_border_rounded,
                 label: '${post.saves}',
                 color: _favorited ? AppColors.orange : AppColors.text,
                 isLoading: _isFavoriting,
@@ -11585,6 +10734,307 @@ class _PostFeedCardState extends State<PostFeedCard> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class ActivityListCard extends StatefulWidget {
+  const ActivityListCard({required this.activity, super.key, this.onChanged});
+
+  final CampusActivity activity;
+  final Future<void> Function()? onChanged;
+
+  @override
+  State<ActivityListCard> createState() => _ActivityListCardState();
+}
+
+class _ActivityListCardState extends State<ActivityListCard> {
+  late CampusActivity _activity;
+  StreamSubscription<CampusDataEvent>? _syncSubscription;
+  var _isFavoriting = false;
+  var _isRegistered = false;
+  var _isCheckingRegistration = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _activity = widget.activity;
+    _syncSubscription = CampusEventBus.instance.stream.listen((event) {
+      if (!mounted || _activity.id.isEmpty) return;
+      if (event.matches(CampusEventType.activityChanged, refId: _activity.id) ||
+          event.type == CampusEventType.feedChanged) {
+        for (final item in CampusRepository.instance.cachedFeed.activities) {
+          if (item.id == _activity.id) {
+            setState(() {
+              _activity = item;
+              _isRegistered = _realRegistered;
+            });
+            break;
+          }
+        }
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRegistrationState();
+    });
+  }
+
+  @override
+  void dispose() {
+    _syncSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant ActivityListCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activity.id != widget.activity.id ||
+        oldWidget.activity.isFavorited != widget.activity.isFavorited ||
+        oldWidget.activity.enrolled != widget.activity.enrolled) {
+      _activity = widget.activity;
+      _syncRegistrationState();
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isFavoriting) return;
+
+    if (_activity.id.isEmpty) {
+      _showShellMessage(context, '这场活动暂未同步到后端');
+      return;
+    }
+
+    final before = _activity.isFavorited;
+    final localBefore = _activity;
+
+    // 只更新收藏状态，不替换整条 activity，避免后端返回缺少报名状态导致按钮闪动。
+    setState(() {
+      _isFavoriting = true;
+      _activity = _activity.copyWith(isFavorited: !before);
+    });
+
+    try {
+      final next = await CampusRepository.instance.toggleActivityFavorite(
+        localBefore,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _activity = _activity.copyWith(isFavorited: next.isFavorited);
+      });
+
+      _showShellMessage(context, next.isFavorited ? '已收藏活动' : '已取消收藏');
+
+      // 这里不立即刷新父级 feed，避免列表整块重建造成闪动。
+      // 进入/返回“我的收藏”页面时会重新拉取真实数据。
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() => _activity = localBefore);
+      _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) {
+        setState(() => _isFavoriting = false);
+      }
+    }
+  }
+
+  bool get _realRegistered => _isRegistered;
+
+  Future<void> _syncRegistrationState() async {
+    final id = _activity.id.trim();
+    if (id.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _isRegistered = false;
+          _isCheckingRegistration = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isCheckingRegistration = true);
+    }
+
+    try {
+      final myActivities = await CampusRepository.instance.fetchMyActivities();
+      final registered = myActivities.any((item) => item.id == id);
+
+      if (!mounted || _activity.id.trim() != id) return;
+      setState(() {
+        _isRegistered = registered;
+        _isCheckingRegistration = false;
+      });
+    } catch (_) {
+      // 未登录、接口失败或后端不可用时，不能误显示“已报名”
+      if (!mounted || _activity.id.trim() != id) return;
+      setState(() {
+        _isRegistered = false;
+        _isCheckingRegistration = false;
+      });
+    }
+  }
+
+  Future<void> _openDetail() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: _activity,
+          initialRegistered: _realRegistered,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await widget.onChanged?.call();
+      await _syncRegistrationState();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activity = _activity;
+    final tags = activity.highlights.isEmpty
+        ? [activity.category]
+        : activity.highlights.take(2).toList(growable: false);
+    final isRegistered = _realRegistered;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openDetail,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SmartImage(
+                url: activity.posterUrl,
+                width: 104,
+                height: 118,
+                borderRadius: 11,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 152,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        activity.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          for (var i = 0; i < tags.length; i++)
+                            _ActivityTag(
+                              label: tags[i],
+                              color: i == 0 ? AppColors.blue : AppColors.green,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        '${activity.date}   ${activity.time}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        activity.location,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          AvatarStack(users: activity.guests, size: 24),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${activity.enrolled}人已报名',
+                            style: const TextStyle(
+                              color: AppColors.muted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: _isFavoriting ? null : _toggleFavorite,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 120),
+                          transitionBuilder: (child, animation) {
+                            return ScaleTransition(
+                              scale: animation,
+                              child: child,
+                            );
+                          },
+                          child: Icon(
+                            activity.isFavorited
+                                ? Icons.star_rounded
+                                : Icons.star_border_rounded,
+                            key: ValueKey(activity.isFavorited),
+                            color: activity.isFavorited
+                                ? AppColors.orange
+                                : AppColors.muted,
+                            size: 31,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _JoinActivityButton(
+                    label: _isCheckingRegistration
+                        ? '同步中'
+                        : isRegistered
+                        ? '已报名'
+                        : '报名参加',
+                    color: isRegistered ? AppColors.blue : AppColors.green,
+                    isLoading: _isCheckingRegistration,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

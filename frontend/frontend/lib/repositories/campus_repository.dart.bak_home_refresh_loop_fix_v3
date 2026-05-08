@@ -436,6 +436,7 @@ class CampusRepository {
       _mergeExtraPostsIntoFeedV2(_cachedFeed, realPosts),
     );
     _cachedFeed = _stripFrontendDemoFeedV2(_cachedFeed);
+    _emitFeedChanged();
     return realPosts;
   }
 

@@ -5,91 +5,7 @@ import '../services/campus_api_client.dart';
 import 'auth_session.dart';
 import 'campus_event_bus.dart';
 
-bool _isDemoPost(CampusPost post) {
-  const demoTitles = <String>{
-    '校园日落拍摄地推荐',
-    '新图书馆自习位怎么预约？求攻略！',
-    '高效复习时间表分享，亲测有效！',
-    '各科目复习资料大合集（持续更新）',
-    '动态标题测试',
-  };
-
-  final title = post.title.trim();
-  if (demoTitles.contains(title)) return true;
-
-  // 前端 sample_data 里的演示帖通常没有后端 id。
-  // 发布/刷新真实数据时，不让这些本地演示帖混入首页缓存。
-  return post.id.trim().isEmpty;
-}
-
 class CampusRepository {
-  static const Set<String> _frontendDemoPostTitlesV2 = {
-    '校园日落拍摄地推荐',
-    '新图书馆自习位怎么预约？求攻略！',
-    '高效复习时间表分享，亲测有效！',
-    '各科目复习资料大全（持续更新）',
-    '图书馆自习打卡',
-    '学校食堂新品测评！',
-  };
-
-  static const List<String> _frontendDemoPostBodyMarksV2 = [
-    '今天的晚霞也太美了',
-    '最近想去新图书馆学习',
-    '根据课程难度和自身情况制定了这份时间表',
-    '整理了一些我用过的网课、书籍和题库资源',
-    '周末也要努力学习呀',
-    '今天试了二楼窗口的新菜',
-  ];
-
-  bool _isFrontendDemoPostV2(CampusPost post) {
-    final title = post.title.trim();
-    if (_frontendDemoPostTitlesV2.contains(title)) return true;
-
-    final body = post.body.trim();
-    for (final mark in _frontendDemoPostBodyMarksV2) {
-      if (body.contains(mark)) return true;
-    }
-
-    final createdAt = post.createdAt.trim();
-    final authorName = post.author.name.trim();
-    if ((authorName == '陈可欣' || authorName == '林小北') &&
-        (createdAt == '2小时前' ||
-            createdAt == '05-20 14:32' ||
-            createdAt == '1天前' ||
-            createdAt == '2天前')) {
-      return true;
-    }
-
-    return false;
-  }
-
-  List<CampusPost> _stripFrontendDemoPostsV2(Iterable<CampusPost> posts) {
-    return posts
-        .where((post) => !_isFrontendDemoPostV2(post))
-        .toList(growable: false);
-  }
-
-  CampusFeed _stripFrontendDemoFeedV2(CampusFeed feed) {
-    return CampusFeed(
-      users: feed.users,
-      posts: _stripFrontendDemoPostsV2(feed.posts),
-      activities: feed.activities,
-      groups: feed.groups
-          .map(
-            (group) => group.copyWith(
-              discussions: _stripFrontendDemoPostsV2(group.discussions),
-            ),
-          )
-          .toList(growable: false),
-      topics: feed.topics
-          .map(
-            (topic) =>
-                topic.copyWith(posts: _stripFrontendDemoPostsV2(topic.posts)),
-          )
-          .toList(growable: false),
-    );
-  }
-
   CampusRepository({CampusApiClient? apiClient})
     : _apiClient = apiClient ?? CampusApiClient();
 
@@ -100,37 +16,7 @@ class CampusRepository {
   CampusFeed _cachedFeed = fallbackFeed;
   Set<String> _cachedFavoriteActivityIds = <String>{};
 
-  CampusFeed get cachedFeed => _withoutDemoPosts(_cachedFeed);
-
-  CampusFeed _withoutDemoPosts(CampusFeed feed) {
-    bool isRealPost(CampusPost post) => post.id.trim().isNotEmpty;
-
-    final realPosts = feed.posts.where(isRealPost).toList(growable: false);
-    final realGroups = feed.groups
-        .map(
-          (group) => group.copyWith(
-            discussions: group.discussions
-                .where(isRealPost)
-                .toList(growable: false),
-          ),
-        )
-        .toList(growable: false);
-    final realTopics = feed.topics
-        .map(
-          (topic) => topic.copyWith(
-            posts: topic.posts.where(isRealPost).toList(growable: false),
-          ),
-        )
-        .toList(growable: false);
-
-    return CampusFeed(
-      users: feed.users,
-      posts: realPosts,
-      activities: feed.activities,
-      groups: realGroups,
-      topics: realTopics,
-    );
-  }
+  CampusFeed get cachedFeed => _cachedFeed;
 
   void _emitSync(CampusEventType type, {String refId = '', Object? payload}) {
     CampusEventBus.instance.emit(
@@ -139,7 +25,6 @@ class CampusRepository {
   }
 
   void _emitFeedChanged() {
-    _cachedFeed = _withoutDemoPosts(_cachedFeed);
     _emitSync(CampusEventType.feedChanged);
   }
 
@@ -196,101 +81,20 @@ class CampusRepository {
     _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
   }
 
-  List<CampusPost> _mergeRealPostsForHomeV2({
-    required Iterable<CampusPost> primary,
-    required Iterable<CampusPost> extra,
-  }) {
-    final byId = <String, CampusPost>{};
-
-    void addPost(CampusPost post) {
-      final id = post.id.trim();
-      if (id.isEmpty || _isDemoPost(post)) return;
-      byId[id] = post;
-    }
-
-    for (final post in primary) {
-      addPost(post);
-    }
-    for (final post in extra) {
-      addPost(post);
-    }
-
-    final merged = byId.values.toList(growable: false);
-    merged.sort((left, right) {
-      final leftTime = DateTime.tryParse(left.createdAt);
-      final rightTime = DateTime.tryParse(right.createdAt);
-      if (leftTime != null && rightTime != null) {
-        return rightTime.compareTo(leftTime);
-      }
-      if (leftTime != null) return -1;
-      if (rightTime != null) return 1;
-      return right.createdAt.compareTo(left.createdAt);
-    });
-    return merged;
-  }
-
-  CampusFeed _mergeExtraPostsIntoFeedV2(
-    CampusFeed feed,
-    Iterable<CampusPost> extraPosts,
-  ) {
-    final mergedPosts = _mergeRealPostsForHomeV2(
-      primary: feed.posts,
-      extra: extraPosts,
-    );
-
-    return CampusFeed(
-      users: feed.users,
-      posts: mergedPosts,
-      activities: feed.activities,
-      groups: feed.groups,
-      topics: feed.topics
-          .map(
-            (topic) => topic.copyWith(
-              posts: _mergeRealPostsForHomeV2(
-                primary: topic.posts,
-                extra: mergedPosts.where((post) => post.topic == topic.name),
-              ),
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-
   Future<CampusFeed> fetchFeed() async {
     try {
       final remoteFeed = await _apiClient.fetchFeed();
-      var nextFeed = _normalizeFeed(remoteFeed);
+      _cachedFeed = _normalizeFeed(remoteFeed);
 
-      final authToken = AuthSession.token;
-      if (authToken?.isNotEmpty == true) {
-        final token = authToken!;
-
-        try {
-          final myPosts = await _apiClient.fetchMyPosts(token: token);
-          nextFeed = _mergeExtraPostsIntoFeedV2(nextFeed, myPosts);
-        } catch (_) {
-          // /api/feed 偶尔没有带上当前用户帖子时，至少保留本地缓存里的真实帖子。
-          nextFeed = _mergeExtraPostsIntoFeedV2(nextFeed, _cachedFeed.posts);
-        }
-
-        try {
-          final favorites = await _apiClient.fetchFavorites(token: token);
-          _cacheFavoriteRecords(favorites);
-        } catch (_) {
-          // 收藏状态同步失败不影响首页真实帖子展示。
-        }
-      } else {
-        nextFeed = _mergeExtraPostsIntoFeedV2(nextFeed, _cachedFeed.posts);
+      try {
+        await _syncFavoriteActivityIds();
+      } catch (_) {
+        _cachedFeed = _applyFavoriteStateToFeed(_cachedFeed);
       }
 
-      _cachedFeed = _applyFavoriteStateToFeed(nextFeed);
-      _cachedFeed = _stripFrontendDemoFeedV2(_cachedFeed);
       return _cachedFeed;
     } catch (_) {
-      _cachedFeed = _applyFavoriteStateToFeed(
-        _mergeExtraPostsIntoFeedV2(_cachedFeed, const <CampusPost>[]),
-      );
-      _cachedFeed = _stripFrontendDemoFeedV2(_cachedFeed);
+      _cachedFeed = _applyFavoriteStateToFeed(fallbackFeed);
       return _cachedFeed;
     }
   }
@@ -410,12 +214,7 @@ class CampusRepository {
     );
     _cachedFeed = CampusFeed(
       users: _cachedFeed.users,
-      posts: [
-        post,
-        ..._cachedFeed.posts.where(
-          (cachedPost) => cachedPost.id != post.id && !_isDemoPost(cachedPost),
-        ),
-      ],
+      posts: [post, ..._cachedFeed.posts],
       activities: _cachedFeed.activities,
       groups: _cachedFeed.groups,
       topics: _cachedFeed.topics,
@@ -426,17 +225,8 @@ class CampusRepository {
     return post;
   }
 
-  Future<List<CampusPost>> fetchMyPosts() async {
-    final posts = await _apiClient.fetchMyPosts(token: _requireToken());
-    final realPosts = posts
-        .where((post) => post.id.trim().isNotEmpty && !_isDemoPost(post))
-        .toList(growable: false);
-
-    _cachedFeed = _applyFavoriteStateToFeed(
-      _mergeExtraPostsIntoFeedV2(_cachedFeed, realPosts),
-    );
-    _cachedFeed = _stripFrontendDemoFeedV2(_cachedFeed);
-    return realPosts;
+  Future<List<CampusPost>> fetchMyPosts() {
+    return _apiClient.fetchMyPosts(token: _requireToken());
   }
 
   Future<CampusPost> updatePost({
@@ -501,10 +291,6 @@ class CampusRepository {
 
   Future<CampusPost> togglePostLike(CampusPost post) async {
     final id = _requirePostId(post);
-    if (!RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(id)) {
-      throw const CampusApiException('演示帖子暂不支持点赞，请发布真实帖子后再试');
-    }
-
     final next = _replaceCachedPost(
       await _apiClient.togglePostLike(token: _requireToken(), postId: id),
     );
@@ -515,15 +301,10 @@ class CampusRepository {
 
   Future<CampusPost> togglePostFavorite(CampusPost post) async {
     final id = _requirePostId(post);
-    if (!RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(id)) {
-      throw const CampusApiException('演示帖子暂不支持收藏，请发布真实帖子后再试');
-    }
-
     final next = _replaceCachedPost(
       await _apiClient.togglePostFavorite(token: _requireToken(), postId: id),
     );
     _emitSync(CampusEventType.postChanged, refId: id, payload: next);
-    _emitSync(CampusEventType.profileChanged);
     _emitFeedChanged();
     return next;
   }
@@ -533,10 +314,6 @@ class CampusRepository {
     required String text,
   }) async {
     final id = _requirePostId(post);
-    if (!RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(id)) {
-      throw const CampusApiException('演示帖子暂不支持评论，请发布真实帖子后再试');
-    }
-
     final result = await _apiClient.createComment(
       token: _requireToken(),
       postId: id,

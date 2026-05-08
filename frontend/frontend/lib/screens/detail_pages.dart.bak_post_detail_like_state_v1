@@ -26,27 +26,6 @@ String _friendlyError(Object error) {
   return '操作失败，请确认后端服务已启动';
 }
 
-String _detailFriendlyTime(String value) {
-  final raw = value.trim();
-  if (raw.isEmpty) return '刚刚';
-
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return raw;
-
-  final time = parsed.toLocal();
-  final now = DateTime.now();
-  final diff = now.difference(time);
-
-  if (diff.inSeconds < 60) return '刚刚';
-  if (diff.inMinutes < 60) return '${diff.inMinutes}分钟前';
-  if (diff.inHours < 24 && now.day == time.day) {
-    return '今天 ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-  if (diff.inDays < 7) return '${diff.inDays}天前';
-
-  return '${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} ${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-}
-
 class PublishPostScreen extends StatefulWidget {
   const PublishPostScreen({super.key, this.initialDraft, this.initialPost});
 
@@ -61,7 +40,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
   final _topicController = TextEditingController(text: '校园生活');
-  final _locationController = TextEditingController();
+  final _locationController = TextEditingController(text: '图书馆广场');
   final List<String> _imageUrls = [];
   var _isSubmitting = false;
   var _isUploadingImage = false;
@@ -910,7 +889,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   var _isLiking = false;
   var _isFavoriting = false;
   var _isFollowingAuthor = false;
-  var _postLiked = false;
   var _postFavorited = false;
   late bool _authorFollowed = widget.post.author.followedByMe;
 
@@ -946,7 +924,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (!mounted) return;
       setState(() => _comments = comments);
     } catch (_) {
-      // 不再展示演示评论：接口为空就展示空状态，避免真实帖子下面混入假评论。
+      // Static fallback comments remain below if the backend is unavailable.
     } finally {
       if (mounted) setState(() => _isLoadingComments = false);
     }
@@ -970,39 +948,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _toggleLike() async {
     if (_isLiking) return;
-
-    final previousPost = _post;
-    final previousLiked = _postLiked;
-    final nextLiked = !previousLiked;
-
-    setState(() {
-      _isLiking = true;
-      _postLiked = nextLiked;
-      final nextLikes = _post.likes + (nextLiked ? 1 : -1);
-      _post = _post.copyWith(likes: nextLikes < 0 ? 0 : nextLikes);
-    });
-
+    setState(() => _isLiking = true);
     try {
-      final post = await CampusRepository.instance.togglePostLike(previousPost);
-      if (!mounted) return;
-
-      setState(() {
-        _post = post;
-        if (post.likes > previousPost.likes) {
-          _postLiked = true;
-        } else if (post.likes < previousPost.likes) {
-          _postLiked = false;
-        } else {
-          _postLiked = nextLiked;
-        }
-      });
+      final post = await CampusRepository.instance.togglePostLike(_post);
+      if (mounted) setState(() => _post = post);
     } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _post = previousPost;
-        _postLiked = previousLiked;
-      });
-      _showMessage(context, _friendlyError(error));
+      if (mounted) _showMessage(context, _friendlyError(error));
     } finally {
       if (mounted) setState(() => _isLiking = false);
     }
@@ -1238,7 +1189,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${_detailFriendlyTime(post.createdAt)} · 来自 社区',
+                      '${post.createdAt} · 来自 社区',
                       style: const TextStyle(color: AppColors.muted),
                     ),
                   ],
@@ -1273,6 +1224,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
           const SizedBox(height: 16),
           Text(post.body, style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 16),
+          Text(
+            '想知道：\n1. 通过哪个入口预约？是否需要学校账号登录？\n2. 每天几点可以预约？能预约多久的时段？\n3. 选座有没有什么小技巧？热门区域容易抢吗？',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.7),
+          ),
           const SizedBox(height: 18),
           Row(
             children: [
@@ -1282,30 +1238,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ],
             ],
           ),
-          if (post.location.trim().isNotEmpty &&
-              post.location.trim() != '图书馆广场') ...[
-            const SizedBox(height: 14),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Pill(
-                label: post.location.trim(),
-                icon: Icons.location_on,
-                color: AppColors.blue,
-              ),
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Pill(
+              label: post.location,
+              icon: Icons.location_on,
+              color: AppColors.blue,
             ),
-          ],
+          ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _ActionStat(
-                icon: _isLiking
-                    ? Icons.hourglass_top_rounded
-                    : (_postLiked
-                          ? Icons.favorite
-                          : Icons.favorite_border_rounded),
+                icon: _isLiking ? Icons.hourglass_top_rounded : Icons.favorite,
                 value: post.likes,
-                color: _postLiked ? AppColors.red : AppColors.text,
+                color: AppColors.red,
                 onTap: _isLiking ? null : _toggleLike,
               ),
               _ActionStat(
@@ -1340,38 +1289,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ],
           ),
           const SizedBox(height: 12),
-
-          if (!_isLoadingComments && _comments.isEmpty)
-            CampusCard(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.mode_comment_outlined,
-                        color: AppColors.muted,
-                        size: 34,
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        '暂无真实评论',
-                        style: TextStyle(
-                          color: AppColors.ink,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 6),
-                      Text(
-                        '发布第一条评论后，会显示在这里',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           if (_isLoadingComments)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
@@ -1383,10 +1300,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 user: comment.author,
                 text: comment.text,
                 likes: comment.likes,
-                createdAt: comment.createdAt,
               )
-          else
-            ...[],
+          else ...[
+            const _CommentTile(
+              user: kexin,
+              text: '我上周刚预约过！入口在“今日校园”APP 服务 图书馆 座位预约，用学校账号登录就行。',
+              likes: 28,
+              reply: '谢谢学姐！入口找到了，超方便！',
+            ),
+            const _CommentTile(
+              user: zihao,
+              text: '每天早上 8:00 可以预约，能预约当天和第二天的座位，每次最多 4 小时。',
+              likes: 19,
+            ),
+            const _CommentTile(
+              user: siyu,
+              text: '推荐 3 楼和 5 楼的自习区，安静又宽敞。记得带充电宝，插座很紧张。',
+              likes: 15,
+            ),
+          ],
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -5196,14 +5128,12 @@ class _CommentTile extends StatelessWidget {
     required this.user,
     required this.text,
     required this.likes,
-    required this.createdAt,
     this.reply,
   });
 
   final CampusUser user;
   final String text;
   final int likes;
-  final String createdAt;
   final String? reply;
 
   @override
@@ -5243,8 +5173,8 @@ class _CommentTile extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(text),
                 const SizedBox(height: 6),
-                Text(
-                  '${_detailFriendlyTime(createdAt)}    回复',
+                const Text(
+                  '05-20 14:45    回复',
                   style: TextStyle(color: AppColors.muted),
                 ),
                 if (reply != null) ...[
