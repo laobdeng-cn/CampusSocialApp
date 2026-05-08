@@ -27,10 +27,9 @@ String _friendlyError(Object error) {
 }
 
 class PublishPostScreen extends StatefulWidget {
-  const PublishPostScreen({super.key, this.initialDraft, this.initialPost});
+  const PublishPostScreen({super.key, this.initialDraft});
 
   final CampusDraft? initialDraft;
-  final CampusPost? initialPost;
 
   @override
   State<PublishPostScreen> createState() => _PublishPostScreenState();
@@ -52,22 +51,6 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   }
 
   void _fillFromInitialDraft() {
-    final post = widget.initialPost;
-    if (post != null) {
-      _titleController.text = post.title;
-      _bodyController.text = post.body;
-      if (post.topic.trim().isNotEmpty) {
-        _topicController.text = post.topic.trim();
-      }
-      if (post.location.trim().isNotEmpty) {
-        _locationController.text = post.location.trim();
-      }
-      _imageUrls
-        ..clear()
-        ..addAll(post.images);
-      return;
-    }
-
     final draft = widget.initialDraft;
     if (draft == null) return;
 
@@ -138,30 +121,15 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
 
     setState(() => _isSubmitting = true);
     try {
-      final topic = _topicController.text.trim().isEmpty
-          ? '校园生活'
-          : _topicController.text.trim();
-      final location = _locationController.text.trim();
-
-      if (widget.initialPost == null) {
-        await CampusRepository.instance.createPost(
-          title: title,
-          body: body,
-          topic: topic,
-          location: location,
-          images: _imageUrls,
-        );
-      } else {
-        await CampusRepository.instance.updatePost(
-          post: widget.initialPost!,
-          title: title,
-          body: body,
-          topic: topic,
-          location: location,
-          images: _imageUrls,
-        );
-      }
-
+      await CampusRepository.instance.createPost(
+        title: title,
+        body: body,
+        topic: _topicController.text.trim().isEmpty
+            ? '校园生活'
+            : _topicController.text.trim(),
+        location: _locationController.text.trim(),
+        images: _imageUrls,
+      );
       await _deleteInitialDraftQuietly();
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -213,13 +181,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
           onPressed: _isSubmitting ? null : _saveDraft,
           child: const Text('草稿'),
         ),
-        title: Text(
-          widget.initialPost != null
-              ? '编辑帖子'
-              : widget.initialDraft == null
-              ? '发布动态'
-              : '继续编辑',
-        ),
+        title: Text(widget.initialDraft == null ? '发布动态' : '继续编辑'),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 14),
@@ -230,13 +192,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
                   borderRadius: BorderRadius.circular(18),
                 ),
               ),
-              child: Text(
-                _isSubmitting
-                    ? '处理中...'
-                    : widget.initialPost != null
-                    ? '保存'
-                    : '发布',
-              ),
+              child: Text(_isSubmitting ? '发布中...' : '发布'),
             ),
           ),
         ],
@@ -957,130 +913,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  bool get _isMine {
-    final user = AuthSession.user;
-    if (user == null) return false;
-    if (user.id.isNotEmpty && _post.author.id.isNotEmpty) {
-      return user.id == _post.author.id;
-    }
-    return user.name == _post.author.name;
-  }
-
-  CampusPost? _cachedPostById(String id) {
-    if (id.isEmpty) return null;
-
-    final feed = CampusRepository.instance.cachedFeed;
-    for (final post in feed.posts) {
-      if (post.id == id) return post;
-    }
-
-    for (final group in feed.groups) {
-      for (final post in group.discussions) {
-        if (post.id == id) return post;
-      }
-    }
-
-    for (final topic in feed.topics) {
-      for (final post in topic.posts) {
-        if (post.id == id) return post;
-      }
-    }
-
-    return null;
-  }
-
-  Future<void> _editPost() async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => PublishPostScreen(initialPost: _post)),
-    );
-
-    if (changed == true && mounted) {
-      final next = _cachedPostById(_post.id);
-      if (next != null) {
-        setState(() {
-          _post = next;
-        });
-      }
-      _showMessage(context, '帖子已更新');
-    }
-  }
-
-  Future<void> _deletePost() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('删除帖子'),
-          content: const Text('确定删除这条帖子吗？删除后评论、收藏和浏览记录也会同步移除。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('删除'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await CampusRepository.instance.deletePost(_post);
-      if (!mounted) return;
-      _showMessage(context, '帖子已删除');
-      Navigator.pop(context, true);
-    } catch (error) {
-      if (mounted) _showMessage(context, _friendlyError(error));
-    }
-  }
-
-  Future<void> _showPostActions() async {
-    if (!_isMine) {
-      _showMessage(context, '只能编辑或删除自己发布的帖子');
-      return;
-    }
-
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('编辑帖子'),
-                onTap: () => Navigator.pop(context, 'edit'),
-              ),
-              ListTile(
-                leading: const Icon(
-                  Icons.delete_outline_rounded,
-                  color: AppColors.red,
-                ),
-                title: const Text(
-                  '删除帖子',
-                  style: TextStyle(color: AppColors.red),
-                ),
-                onTap: () => Navigator.pop(context, 'delete'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-
-    if (action == 'edit') {
-      await _editPost();
-    } else if (action == 'delete') {
-      await _deletePost();
-    }
-  }
-
   Future<void> _toggleAuthorFollow() async {
     if (_isFollowingAuthor) return;
     setState(() => _isFollowingAuthor = true);
@@ -1135,10 +967,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       appBar: AppBar(
         title: const Text('帖子详情'),
         actions: [
-          IconButton(
-            onPressed: _showPostActions,
-            icon: const Icon(Icons.more_horiz),
-          ),
+          IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
         ],
       ),
       body: ListView(

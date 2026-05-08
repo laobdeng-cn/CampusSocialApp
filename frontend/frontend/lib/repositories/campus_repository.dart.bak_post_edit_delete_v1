@@ -229,33 +229,6 @@ class CampusRepository {
     return _apiClient.fetchMyPosts(token: _requireToken());
   }
 
-  Future<CampusPost> updatePost({
-    required CampusPost post,
-    required String title,
-    required String body,
-    required String topic,
-    required String location,
-    List<String> images = const [],
-  }) async {
-    final id = _requirePostId(post);
-    final next = _replaceCachedPost(
-      await _apiClient.updatePost(
-        token: _requireToken(),
-        postId: id,
-        title: title,
-        body: body,
-        topic: topic,
-        location: location,
-        images: images,
-      ),
-    );
-
-    _emitSync(CampusEventType.postChanged, refId: id, payload: next);
-    _emitSync(CampusEventType.profileChanged);
-    _emitFeedChanged();
-    return next;
-  }
-
   Future<void> deletePost(CampusPost post) async {
     final id = _requirePostId(post);
     await _apiClient.deletePost(token: _requireToken(), postId: id);

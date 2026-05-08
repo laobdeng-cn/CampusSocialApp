@@ -39,31 +39,17 @@ class _CampusShellState extends State<CampusShell> {
   int _currentIndex = 0;
   CampusFeed _feed = CampusRepository.instance.cachedFeed;
   bool _isRefreshing = false;
-  StreamSubscription<CampusDataEvent>? _feedSubscription;
 
   @override
   void initState() {
     super.initState();
     campusTabIndexNotifier.addListener(_syncExternalTabIndex);
     _refreshFeed();
-    _feedSubscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.profileChanged ||
-          event.type == CampusEventType.groupChanged ||
-          event.type == CampusEventType.activityChanged) {
-        setState(() {
-          _feed = CampusRepository.instance.cachedFeed;
-        });
-      }
-    });
   }
 
   @override
   void dispose() {
     campusTabIndexNotifier.removeListener(_syncExternalTabIndex);
-    _feedSubscription?.cancel();
     super.dispose();
   }
 
@@ -5989,33 +5975,11 @@ class _MyPostsScreen extends StatefulWidget {
 
 class _MyPostsScreenState extends State<_MyPostsScreen> {
   late Future<List<CampusPost>> _future;
-  StreamSubscription<CampusDataEvent>? _subscription;
 
   @override
   void initState() {
     super.initState();
     _future = CampusRepository.instance.fetchMyPosts();
-    _subscription = CampusEventBus.instance.stream.listen((event) {
-      if (!mounted) return;
-      if (event.type == CampusEventType.postChanged ||
-          event.type == CampusEventType.feedChanged ||
-          event.type == CampusEventType.profileChanged) {
-        _refreshPosts();
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    super.dispose();
-  }
-
-  void _refreshPosts() {
-    if (!mounted) return;
-    setState(() {
-      _future = CampusRepository.instance.fetchMyPosts();
-    });
   }
 
   List<CampusPost> _fallbackPosts() {
@@ -6039,25 +6003,11 @@ class _MyPostsScreenState extends State<_MyPostsScreen> {
     ];
   }
 
-  Future<void> _editPost(CampusPost post) async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => PublishPostScreen(initialPost: post)),
-    );
-
-    if (changed == true && mounted) {
-      _refreshPosts();
-      _showShellMessage(context, '帖子已更新');
-    }
-  }
-
   Future<void> _deletePost(CampusPost post) async {
     try {
       await CampusRepository.instance.deletePost(post);
       if (!mounted) return;
-      setState(() {
-        _future = CampusRepository.instance.fetchMyPosts();
-      });
+      setState(() => _future = CampusRepository.instance.fetchMyPosts());
       _showShellMessage(context, '帖子已删除');
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
@@ -6077,56 +6027,12 @@ class _MyPostsScreenState extends State<_MyPostsScreen> {
         future: _future,
         builder: (context, snapshot) {
           final remotePosts = snapshot.data ?? const <CampusPost>[];
-          final posts = remotePosts;
+          final posts = remotePosts.isEmpty ? _fallbackPosts() : remotePosts;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               const _SegmentedFilterTabs(tabs: ['全部', '已发布', '审核中', '草稿']),
               const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (posts.isEmpty)
-                CampusCard(
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.article_outlined,
-                        size: 46,
-                        color: AppColors.muted,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '暂无真实帖子数据',
-                        style: TextStyle(
-                          color: AppColors.ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        '发布一条动态后，会自动显示在这里',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                      const SizedBox(height: 14),
-                      PrimaryButton(
-                        label: '去发布帖子',
-                        onPressed: () async {
-                          final created = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PublishPostScreen(),
-                            ),
-                          );
-                          if (created == true) _refreshPosts();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
               for (final post in posts) ...[
                 _PostManageCard(
                   post: post,
@@ -6134,13 +6040,6 @@ class _MyPostsScreenState extends State<_MyPostsScreen> {
                       ? null
                       : () => _deletePost(post),
                 ),
-                if (remotePosts.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  _PostManageInlineActions(
-                    onEdit: () => _editPost(post),
-                    onDelete: () => _deletePost(post),
-                  ),
-                ],
                 const SizedBox(height: 14),
               ],
               const Center(
@@ -10398,43 +10297,6 @@ class _AlbumSectionView extends StatelessWidget {
   }
 }
 
-class _PostManageInlineActions extends StatelessWidget {
-  const _PostManageInlineActions({
-    required this.onEdit,
-    required this.onDelete,
-  });
-
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onEdit,
-            icon: const Icon(Icons.edit_outlined, size: 18),
-            label: const Text('编辑'),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded, size: 18),
-            label: const Text('删除'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.red,
-              side: const BorderSide(color: AppColors.red),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class PostFeedCard extends StatefulWidget {
   const PostFeedCard({required this.post, super.key});
 
@@ -10450,19 +10312,6 @@ class _PostFeedCardState extends State<PostFeedCard> {
   var _favorited = false;
   var _isLiking = false;
   var _isFavoriting = false;
-
-  @override
-  void didUpdateWidget(covariant PostFeedCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.post.id != widget.post.id ||
-        oldWidget.post.title != widget.post.title ||
-        oldWidget.post.body != widget.post.body ||
-        oldWidget.post.likes != widget.post.likes ||
-        oldWidget.post.comments != widget.post.comments ||
-        oldWidget.post.saves != widget.post.saves) {
-      _post = widget.post;
-    }
-  }
 
   Future<void> _toggleLike() async {
     if (_isLiking) return;

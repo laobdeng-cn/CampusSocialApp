@@ -6077,56 +6077,12 @@ class _MyPostsScreenState extends State<_MyPostsScreen> {
         future: _future,
         builder: (context, snapshot) {
           final remotePosts = snapshot.data ?? const <CampusPost>[];
-          final posts = remotePosts;
+          final posts = remotePosts.isEmpty ? _fallbackPosts() : remotePosts;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               const _SegmentedFilterTabs(tabs: ['全部', '已发布', '审核中', '草稿']),
               const SizedBox(height: 14),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (posts.isEmpty)
-                CampusCard(
-                  child: Column(
-                    children: [
-                      const Icon(
-                        Icons.article_outlined,
-                        size: 46,
-                        color: AppColors.muted,
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        '暂无真实帖子数据',
-                        style: TextStyle(
-                          color: AppColors.ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        '发布一条动态后，会自动显示在这里',
-                        style: TextStyle(color: AppColors.muted),
-                      ),
-                      const SizedBox(height: 14),
-                      PrimaryButton(
-                        label: '去发布帖子',
-                        onPressed: () async {
-                          final created = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const PublishPostScreen(),
-                            ),
-                          );
-                          if (created == true) _refreshPosts();
-                        },
-                      ),
-                    ],
-                  ),
-                ),
               for (final post in posts) ...[
                 _PostManageCard(
                   post: post,

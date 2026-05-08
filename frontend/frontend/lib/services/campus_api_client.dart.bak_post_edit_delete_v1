@@ -132,25 +132,6 @@ class CampusApiClient {
     return _readPostPayload(json);
   }
 
-  Future<CampusPost> updatePost({
-    required String token,
-    required String postId,
-    required String title,
-    required String body,
-    required String topic,
-    required String location,
-    required List<String> images,
-  }) async {
-    final json = await _patchJson('/api/posts/$postId', {
-      'title': title,
-      'body': body,
-      'topic': topic,
-      'location': location,
-      'images': images,
-    }, token: token);
-    return _readPostPayload(json);
-  }
-
   Future<List<CampusPost>> fetchMyPosts({required String token}) async {
     final json = await _getJson('/api/me/posts', token: token);
     final value = json['posts'];
