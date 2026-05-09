@@ -2668,7 +2668,10 @@ class _IncomingChatBubble extends StatelessWidget {
                     ),
                   ],
                 ),
-                child: _StickerMessageText(text: text, color: AppColors.ink),
+                child: _StickerMessageText(
+                  text: text,
+                  color: AppColors.ink,
+                ),
               ),
             ),
           ),
@@ -2678,8 +2681,13 @@ class _IncomingChatBubble extends StatelessWidget {
   }
 }
 
+
 class _OutgoingChatBubble extends StatelessWidget {
-  const _OutgoingChatBubble({required this.text, this.user, this.sent = false});
+  const _OutgoingChatBubble({
+    required this.text,
+    this.user,
+    this.sent = false,
+  });
 
   final CampusUser? user;
   final String text;
@@ -2731,7 +2739,10 @@ class _OutgoingChatBubble extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: _StickerMessageText(text: text, color: Colors.white),
+                    child: _StickerMessageText(
+                      text: text,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -2754,6 +2765,7 @@ class _OutgoingChatBubble extends StatelessWidget {
     );
   }
 }
+
 
 class _WeatherChatBubble extends StatelessWidget {
   const _WeatherChatBubble({required this.user});
@@ -2830,6 +2842,13 @@ class _WeatherChatBubble extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
 
 class _ChatStickerData {
   const _ChatStickerData({
@@ -3018,19 +3037,32 @@ class _StickerMessageText extends StatelessWidget {
           WidgetSpan(
             alignment: PlaceholderAlignment.middle,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
               child: Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                 decoration: BoxDecoration(
-                  color: sticker.color.withValues(alpha: 0.16),
-                  shape: BoxShape.circle,
+                  color: sticker.color.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                    color: sticker.color.withValues(alpha: 0.24),
+                    color: sticker.color.withValues(alpha: 0.22),
                   ),
                 ),
-                child: Icon(sticker.icon, size: 18, color: sticker.color),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(sticker.icon, size: 16, color: sticker.color),
+                    const SizedBox(width: 3),
+                    Text(
+                      sticker.label,
+                      style: TextStyle(
+                        color: sticker.color,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -3054,7 +3086,9 @@ class _StickerMessageText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RichText(text: TextSpan(children: _buildSpans()));
+    return RichText(
+      text: TextSpan(children: _buildSpans()),
+    );
   }
 }
 

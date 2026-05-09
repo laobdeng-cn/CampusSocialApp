@@ -2213,47 +2213,6 @@ router.get('/me/checkins', requireAuth, async (request, response, next) => {
   }
 });
 
-
-router.post('/conversations/:id/read-v2', requireAuth, async (request, response, next) => {
-  try {
-    const conversation = await Conversation.findOne({
-      _id: request.params.id,
-      participants: request.user._id,
-    });
-
-    if (!conversation) {
-      response.status(404).json({ message: '会话不存在或无权限访问' });
-      return;
-    }
-
-    const result = await Message.updateMany(
-      {
-        conversation: conversation._id,
-        sender: { $ne: request.user._id },
-        readBy: { $ne: request.user._id },
-      },
-      {
-        $addToSet: { readBy: request.user._id },
-      }
-    );
-
-    const unreadCount = await Message.countDocuments({
-      conversation: conversation._id,
-      sender: { $ne: request.user._id },
-      readBy: { $ne: request.user._id },
-    });
-
-    response.json({
-      ok: true,
-      updatedCount: result.modifiedCount || 0,
-      unreadCount,
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
-
 router.get('/me/following', requireAuth, async (request, response, next) => {
   try {
     const follows = await Follow.find({ follower: request.user._id })

@@ -1034,15 +1034,6 @@ class CampusRepository {
     );
   }
 
-  Future<void> markConversationRead(String conversationId) async {
-    if (conversationId.isEmpty) return;
-    await _apiClient.markConversationRead(
-      token: _requireToken(),
-      conversationId: conversationId,
-    );
-    _emitSync(CampusEventType.notificationChanged, refId: conversationId);
-  }
-
   Future<CampusChatMessage> sendConversationMessage({
     required String conversationId,
     required String text,

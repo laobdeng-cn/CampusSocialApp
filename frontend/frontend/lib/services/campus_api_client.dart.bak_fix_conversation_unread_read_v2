@@ -894,17 +894,6 @@ class CampusApiClient {
         .toList(growable: false);
   }
 
-  Future<void> markConversationRead({
-    required String token,
-    required String conversationId,
-  }) async {
-    await _postJson(
-      '/api/conversations/$conversationId/read-v2',
-      {},
-      token: token,
-    );
-  }
-
   Future<CampusChatMessage> sendConversationMessage({
     required String token,
     required String conversationId,
