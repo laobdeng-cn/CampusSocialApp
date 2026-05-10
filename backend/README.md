@@ -10,7 +10,17 @@ npm install
 npm run dev
 ```
 
-If `MONGODB_URI` is not configured or MongoDB is unavailable, the API still starts and serves mock data from `src/data/seed.js`.
+The backend now uses real MongoDB data only. Demo seed data has been removed. If `MONGODB_URI` is not configured or MongoDB is unavailable, API requests should return empty results or database errors instead of mock/demo records.
+
+## Remove existing demo records
+
+If your local MongoDB already contains old demo data, run:
+
+```bash
+npm run cleanup:demo
+```
+
+This cleanup script removes known demo users, demo posts, demo activities, and related records. It does not create new data.
 
 ## Endpoints
 
