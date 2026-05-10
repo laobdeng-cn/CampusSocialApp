@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "check": "node --check src/server.js && node --check src/db.js && node --check src/auth.js && node --check src/routes/index.js && node --check src/seed.js && node --check src/models/Activity.js && node --check src/models/BrowsingHistory.js && node --check src/models/CheckIn.js && node --check src/models/Comment.js && node --check src/models/Conversation.js && node --check src/models/Draft.js && node --check src/models/Enrollment.js && node --check src/models/Favorite.js && node --check src/models/Follow.js && node --check src/models/GroupMembership.js && node --check src/models/Like.js && node --check src/models/Message.js && node --check src/models/Notification.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "cleanup:demo": "node cleanup_all_demo_data_force_v2.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
