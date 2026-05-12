@@ -1863,11 +1863,10 @@ class _PrivateChatEntry {
     required this.message,
     required this.time,
     this.conversationId = '',
-    this.name,
     this.unreadCount = 0,
-    this.pinned = false,
     this.online = false,
-  });
+  }) : name = null,
+       pinned = false;
 
   factory _PrivateChatEntry.fromConversation(CampusConversation conversation) {
     return _PrivateChatEntry(
@@ -2685,11 +2684,8 @@ class _ChatStickerBook {
 }
 
 class _StickerMessageText extends StatelessWidget {
-  const _StickerMessageText({
-    required this.text,
-    required this.color,
-    this.fontSize = 15.5,
-  });
+  const _StickerMessageText({required this.text, required this.color})
+    : fontSize = 15.5;
 
   final String text;
   final Color color;
@@ -4033,11 +4029,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int? _followersCount;
   int? _likedCount;
   int? _activityCount;
-  int? _postCount;
-  int? _commentCount;
-  int? _favoriteCount;
   int? _favoritePostCount;
-  int? _historyCount;
   int? _draftCount;
   int? _groupCount;
 
@@ -4082,10 +4074,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         CampusRepository.instance.fetchFollowers(),
         CampusRepository.instance.fetchLikesReceived(),
         CampusRepository.instance.fetchMyActivities(),
-        CampusRepository.instance.fetchMyPosts(),
-        CampusRepository.instance.fetchMyComments(),
         CampusRepository.instance.fetchFavorites(),
-        CampusRepository.instance.fetchHistory(),
         CampusRepository.instance.fetchDrafts(),
         CampusRepository.instance.fetchMyGroups(),
       ]);
@@ -4094,12 +4083,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final followers = result[1] as List<CampusUser>;
       final likes = result[2] as List<CampusLikeRecord>;
       final activities = result[3] as List<CampusActivity>;
-      final posts = result[4] as List<CampusPost>;
-      final comments = result[5] as List<CampusMyCommentRecord>;
-      final favorites = result[6] as List<CampusFavoriteRecord>;
-      final history = result[7] as List<CampusHistoryRecord>;
-      final drafts = result[8] as List<CampusDraft>;
-      final groups = result[9] as List<CampusGroup>;
+      final favorites = result[4] as List<CampusFavoriteRecord>;
+      final drafts = result[5] as List<CampusDraft>;
+      final groups = result[6] as List<CampusGroup>;
 
       if (!mounted) return;
       setState(() {
@@ -4107,13 +4093,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _followersCount = followers.length;
         _likedCount = likes.length;
         _activityCount = activities.length;
-        _postCount = posts.length;
-        _commentCount = comments.length;
-        _favoriteCount = favorites.length;
         _favoritePostCount = favorites
             .where((record) => record.kind == 'post')
             .length;
-        _historyCount = history.length;
         _draftCount = drafts.length;
         _groupCount = groups.length;
         _hasLoadedProfileCounters = true;
@@ -9420,8 +9402,7 @@ class _HistoryEntry {
     required this.icon,
     required this.color,
     this.image,
-    this.user,
-  });
+  }) : user = null;
 
   final String title;
   final String tag;
