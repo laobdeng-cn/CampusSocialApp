@@ -105,6 +105,46 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
       ..addAll(draft.images);
   }
 
+  String _autoTitleFromBody(String body) {
+    final normalized = body.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.isEmpty) return '未命名动态';
+    if (normalized.length <= 18) return normalized;
+    return '${normalized.substring(0, 18)}...';
+  }
+
+  Future<void> _editLocation() async {
+    final controller = TextEditingController(text: _locationController.text);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('所在位置'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(hintText: '例如：图书馆 / 大学生活动中心'),
+            onSubmitted: (value) => Navigator.pop(context, value.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, ''),
+              child: const Text('清空'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+    controller.dispose();
+
+    if (!mounted || result == null) return;
+    setState(() => _locationController.text = result.trim());
+  }
+
   Future<void> _deleteInitialDraftQuietly() async {
     final draft = widget.initialDraft;
     if (draft == null || draft.id.isEmpty) return;
@@ -150,12 +190,13 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   }
 
   Future<void> _submit() async {
-    final title = _titleController.text.trim();
+    final rawTitle = _titleController.text.trim();
     final body = _bodyController.text.trim();
-    if (title.isEmpty || body.isEmpty) {
-      _showMessage(context, '请填写标题和动态内容');
+    if (body.isEmpty) {
+      _showMessage(context, '请填写动态内容');
       return;
     }
+    final title = rawTitle.isEmpty ? _autoTitleFromBody(body) : rawTitle;
 
     setState(() => _isSubmitting = true);
     try {
@@ -293,7 +334,6 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
               alignLabelWithHint: true,
               filled: true,
               fillColor: Colors.white,
-              counterText: '0/500',
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
                 borderSide: const BorderSide(color: AppColors.line),
@@ -395,48 +435,54 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _PublishRow(
-            icon: Icons.location_on,
-            color: AppColors.green,
-            title: '所在位置',
-            value: _locationController.text,
-          ),
-          const SizedBox(height: 12),
-          _PublishRow(
-            icon: Icons.visibility,
-            color: AppColors.blue,
-            title: '谁可以看',
-            value: '公开 · 所有人可见',
+          InkWell(
+            onTap: _isSubmitting ? null : _editLocation,
+            borderRadius: BorderRadius.circular(18),
+            child: _PublishRow(
+              icon: Icons.location_on,
+              color: AppColors.green,
+              title: '所在位置',
+              value: _locationController.text.trim().isEmpty
+                  ? '点击添加位置'
+                  : _locationController.text.trim(),
+            ),
           ),
           const SizedBox(height: 12),
           CampusCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Text('更多选项', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                const _PublishOption(
-                  icon: Icons.alternate_email,
-                  color: AppColors.blue,
-                  title: '@ 好友',
-                  subtitle: '提醒好友来看你的动态',
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.blue.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.visibility, color: AppColors.blue),
                 ),
-                const _PublishOption(
-                  icon: Icons.tag,
-                  color: AppColors.purple,
-                  title: '添加话题',
-                  subtitle: '选择更多话题，获得更多曝光',
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Text(
+                    '谁可以看',
+                    style: TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                 ),
-                const _PublishOption(
-                  icon: Icons.groups_rounded,
-                  color: AppColors.green,
-                  title: '同步到社团',
-                  subtitle: '将动态同步到我的社团动态',
-                  trailing: Switch(value: false, onChanged: null),
+                const Text(
+                  '公开 · 所有人可见',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          const SizedBox.shrink(),
         ],
       ),
     );
@@ -4205,34 +4251,6 @@ class _PublishRow extends StatelessWidget {
           const Icon(Icons.chevron_right, color: AppColors.muted),
         ],
       ),
-    );
-  }
-}
-
-class _PublishOption extends StatelessWidget {
-  const _PublishOption({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.subtitle,
-    this.trailing,
-  });
-
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: IconBubble(icon: icon, color: color),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-      subtitle: Text(subtitle),
-      trailing:
-          trailing ?? const Icon(Icons.chevron_right, color: AppColors.muted),
     );
   }
 }
