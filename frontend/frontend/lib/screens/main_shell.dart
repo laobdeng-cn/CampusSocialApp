@@ -1590,109 +1590,8 @@ class _MessageList extends StatelessWidget {
   }
 }
 
-const _allMessageEntries = [
-  _MessageEntry(
-    user: zihao,
-    title: '王子豪',
-    time: '2分钟前',
-    firstLine: '点赞了你的帖子《校园日落拍摄地推荐》',
-    secondLine: '一起发现校园里的绝美日落',
-    badgeIcon: Icons.favorite_rounded,
-    badgeColor: AppColors.red,
-    unread: true,
-  ),
-  _MessageEntry(
-    user: siyu,
-    title: '刘思雨',
-    time: '15分钟前',
-    firstLine: '评论了你的帖子《图书馆自习打卡》',
-    secondLine: '这本书我也在看！写得太棒了',
-    badgeIcon: Icons.more_horiz_rounded,
-    badgeColor: AppColors.blue,
-    unread: true,
-  ),
-  _MessageEntry(
-    user: xiaobei,
-    title: '林小北',
-    time: '1小时前',
-    firstLine: '你好呀，下周的摄影活动还有名额吗？',
-    badgeIcon: Icons.mail_outline_rounded,
-    badgeColor: Color(0xFF6EA8FF),
-    unread: true,
-  ),
-  _MessageEntry(
-    title: '系统通知',
-    time: '3小时前',
-    firstLine: '校园音乐之夜报名成功',
-    secondLine: '恭喜你成功报名「校园音乐之夜」，期待你的参与！',
-    systemIcon: Icons.notifications_rounded,
-    systemColor: AppColors.blue,
-    badgeIcon: Icons.check_rounded,
-    badgeColor: AppColors.green,
-  ),
-  _MessageEntry(
-    user: kexin,
-    title: '新粉丝',
-    time: '5小时前',
-    firstLine: '陈可欣关注了你',
-    secondLine: '一起记录美好校园生活吧',
-    badgeIcon: Icons.person_add_alt_1_rounded,
-    badgeColor: AppColors.blue,
-  ),
-];
-
-const _interactionMessageEntries = [
-  _MessageEntry(
-    user: kexin,
-    title: '陈可欣',
-    time: '2分钟前',
-    firstLine: '点赞了你的帖子《校园日落拍摄地推荐》',
-    secondLine: '封面这张也太美了吧！',
-    badgeIcon: Icons.favorite_rounded,
-    badgeColor: AppColors.red,
-    unread: true,
-  ),
-  _MessageEntry(
-    user: zihao,
-    title: '王子豪',
-    time: '15分钟前',
-    firstLine: '评论了你的帖子《图书馆自习打卡》',
-    secondLine: '这个座位视野超好，学习效率翻倍！',
-    badgeIcon: Icons.more_horiz_rounded,
-    badgeColor: AppColors.blue,
-    unread: true,
-  ),
-  _MessageEntry(
-    user: siyu,
-    title: '刘思雨',
-    time: '28分钟前',
-    firstLine: '在评论中 @ 了你',
-    secondLine: '@林小北 一起去参加这个摄影活动吧～',
-    badgeIcon: Icons.alternate_email_rounded,
-    badgeColor: AppColors.blue,
-    unread: true,
-  ),
-  _MessageEntry(
-    user: xiaobei,
-    title: '林小北',
-    time: '1小时前',
-    firstLine: '关注了你',
-    secondLine: '期待看到你更多的校园生活分享！',
-    badgeIcon: Icons.person_add_alt_1_rounded,
-    badgeColor: Color(0xFF5A9BFF),
-    unread: true,
-  ),
-  _MessageEntry(
-    user: siyu,
-    title: '新粉丝',
-    time: '3小时前',
-    firstLine: '收藏了你的帖子《校园音乐之夜圆满落幕》',
-    secondLine: '活动太棒了，期待下一次！',
-    badgeIcon: Icons.star_rounded,
-    badgeColor: AppColors.orange,
-    unread: true,
-  ),
-];
+const _allMessageEntries = <_MessageEntry>[];
+const _interactionMessageEntries = <_MessageEntry>[];
 
 class _MessageEntry {
   const _MessageEntry({
@@ -3649,7 +3548,7 @@ const _messageNoticeActivity = CampusActivity(
   price: '免费',
   description: '面向全校同学开放的校园歌手舞台，欢迎热爱音乐的同学报名参赛或到场观演。',
   highlights: ['校园舞台', '专业评委', '现场互动'],
-  guests: [xiaochen, kexin],
+  guests: <CampusUser>[],
 );
 
 class _MessageNoticeDetailScreen extends StatelessWidget {
@@ -10979,7 +10878,11 @@ class _MiniAvatarStack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const users = [kexin, xiaobei, zihao, siyu];
+    final users = CampusRepository.instance.cachedFeed.users
+        .take(4)
+        .toList(growable: false);
+    if (users.isEmpty) return const SizedBox.shrink();
+
     return SizedBox(
       width: 58,
       height: 22,

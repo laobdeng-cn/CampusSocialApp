@@ -341,7 +341,7 @@ class CampusApiClient {
       'publicDisplay': publicDisplay,
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
-      'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
+      'checkInCode': checkInCode.isEmpty ? 'campus2026' : checkInCode,
     }, token: token);
 
     final activity = _readActivityPayload(json);
@@ -403,7 +403,7 @@ class CampusApiClient {
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
       'checkInCode': submitCheckInCode.isEmpty
-          ? 'CAMPUS2026'
+          ? 'campus2026'
           : submitCheckInCode,
       'tags': tags,
       'allowComments': allowComments,
@@ -1097,7 +1097,7 @@ class CampusApiClient {
       'publicDisplay': publicDisplay,
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
-      'checkInCode': checkInCode.isEmpty ? 'CAMPUS2026' : checkInCode,
+      'checkInCode': checkInCode.isEmpty ? 'campus2026' : checkInCode,
     }, token: token);
 
     final activity = _readActivityPayload(json);
@@ -1202,11 +1202,13 @@ class CampusApiClient {
     required String username,
     required String password,
     required String name,
+    required String invitationCode,
   }) async {
     final json = await _postJson('/api/auth/register', {
       'username': username,
       'password': password,
       'name': name,
+      'invitationCode': invitationCode,
     });
     return _readAuthPayload(json);
   }

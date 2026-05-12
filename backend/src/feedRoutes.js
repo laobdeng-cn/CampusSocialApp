@@ -6,7 +6,9 @@ const Activity = require('./models/Activity');
 const Post = require('./models/Post');
 const CheckIn = require('./models/CheckIn');
 const Enrollment = require('./models/Enrollment');
+const Group = require('./models/Group');
 const User = require('./models/User');
+const Topic = require('./models/Topic');
 const seed = require('./data/seed');
 
 const DEMO_USER_NAMES = new Set([
@@ -275,6 +277,55 @@ function serializeActivity(activity, options = {}) {
   };
 }
 
+function serializeGroup(group) {
+  if (!group) return null;
+  const plain = typeof group.toObject === 'function' ? group.toObject() : group;
+  const pinnedIds = (plain.pinnedDiscussionIds || []).map((item) =>
+    String(item?._id || item || '')
+  );
+  return {
+    ...plain,
+    id: String(plain._id || plain.id || ''),
+    activities: (plain.activityIds || [])
+      .map((activity) => serializeActivity(activity))
+      .filter(Boolean),
+    discussions: (plain.discussionIds || [])
+      .map((post) => serializePost(post))
+      .filter(Boolean)
+      .map((post) => ({
+        ...post,
+        pinnedInGroup: pinnedIds.includes(String(post.id)),
+      })),
+    announcementUpdatedBy: publicUser(plain.announcementUpdatedBy),
+    pinnedDiscussionIds: pinnedIds,
+    createdAt: plain.createdAt instanceof Date
+      ? plain.createdAt.toISOString()
+      : plain.createdAt,
+    updatedAt: plain.updatedAt instanceof Date
+      ? plain.updatedAt.toISOString()
+      : plain.updatedAt,
+  };
+}
+
+function serializeTopic(topic) {
+  if (!topic) return null;
+  const plain = typeof topic.toObject === 'function' ? topic.toObject() : topic;
+  return {
+    ...plain,
+    id: String(plain._id || plain.id || ''),
+    posts: (plain.postIds || []).map((post) => serializePost(post)).filter(Boolean),
+    contributors: (plain.contributorIds || [])
+      .map((user) => publicUser(user))
+      .filter(Boolean),
+    createdAt: plain.createdAt instanceof Date
+      ? plain.createdAt.toISOString()
+      : plain.createdAt,
+    updatedAt: plain.updatedAt instanceof Date
+      ? plain.updatedAt.toISOString()
+      : plain.updatedAt,
+  };
+}
+
 function generateResetCheckInCode() {
   return `ACT${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
@@ -357,7 +408,7 @@ router.get('/feed', async (_request, response, next) => {
       return;
     }
 
-    const [users, posts, activities] = await Promise.all([
+    const [users, posts, activities, groups, topics] = await Promise.all([
       User.find().sort({ createdAt: -1 }).lean(),
       Post.find({ visibility: { $ne: 'private' } })
         .populate('author')
@@ -366,6 +417,17 @@ router.get('/feed', async (_request, response, next) => {
       Activity.find({ publicDisplay: { $ne: false } })
         .populate('createdBy')
         .sort({ enrolled: -1, createdAt: -1 })
+        .lean(),
+      Group.find()
+        .populate('announcementUpdatedBy')
+        .populate({ path: 'activityIds', populate: { path: 'createdBy' } })
+        .populate({ path: 'discussionIds', populate: 'author' })
+        .sort({ members: -1, createdAt: -1 })
+        .lean(),
+      Topic.find()
+        .populate({ path: 'postIds', populate: 'author' })
+        .populate('contributorIds')
+        .sort({ onlineCount: -1, createdAt: -1 })
         .lean(),
     ]);
 
@@ -381,8 +443,8 @@ router.get('/feed', async (_request, response, next) => {
       users: users.map(publicUser),
       posts: realPosts,
       activities: realActivities,
-      groups: [],
-      topics: [],
+      groups: groups.map(serializeGroup).filter(Boolean),
+      topics: topics.map(serializeTopic).filter(Boolean),
     });
   } catch (error) {
     console.error('Feed route failed:', error);
@@ -433,10 +495,6 @@ router.get('/me/checkins', requireAuth, async (request, response, next) => {
   } catch (error) {
     next(error);
   }
-});
-
-router.delete('/activities/:id/join', requireAuth, async (_request, response) => {
-  response.status(409).json({ message: '报名成功后不可取消，请按时参加活动并完成签到' });
 });
 
 router.get('/activities/:id/checkin-code', requireAuth, async (request, response, next) => {

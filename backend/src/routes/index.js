@@ -27,6 +27,149 @@ const User = require('../models/User');
 const seed = require('../data/seed');
 
 const router = express.Router();
+const REGISTER_INVITATION_CODE = process.env.REGISTER_INVITATION_CODE || 'campus2026';
+// ENROLLMENT_YEAR_LIST_START
+const VALID_ENROLLMENT_YEARS = new Set([
+  "2020",
+  "2021",
+  "2022",
+  "2023",
+  "2024",
+  "2025",
+  "2026"
+]);
+// ENROLLMENT_YEAR_LIST_END
+// CQ_SCHOOL_LIST_START
+const CHONGQING_UNIVERSITIES = new Set([
+  "重庆大学",
+  "重庆邮电大学",
+  "重庆交通大学",
+  "重庆医科大学",
+  "西南大学",
+  "重庆师范大学",
+  "重庆文理学院",
+  "重庆三峡科技大学",
+  "长江师范学院",
+  "四川外国语大学",
+  "西南政法大学",
+  "四川美术学院",
+  "重庆科技大学",
+  "重庆理工大学",
+  "重庆工商大学",
+  "重庆机电职业技术大学",
+  "重庆工程学院",
+  "重庆城市科技学院",
+  "重庆警察学院",
+  "重庆人文科技学院",
+  "重庆外语外事学院",
+  "重庆对外经贸学院",
+  "重庆财经学院",
+  "重庆工商大学派斯学院",
+  "重庆移通学院",
+  "重庆第二师范学院",
+  "重庆中医药学院",
+  "重庆电子科技职业大学",
+  "重庆工业职业技术大学",
+  "重庆航天职业技术学院",
+  "重庆电力高等专科学校",
+  "重庆三峡职业学院",
+  "重庆工贸职业技术学院",
+  "重庆海联职业技术学院",
+  "重庆信息技术职业学院",
+  "重庆传媒职业学院",
+  "重庆城市管理职业学院",
+  "重庆工程职业技术学院",
+  "重庆建筑科技职业学院",
+  "重庆城市职业学院",
+  "重庆水利电力职业技术学院",
+  "重庆工商职业学院",
+  "重庆应用技术职业学院",
+  "重庆三峡医药高等专科学校",
+  "重庆医药高等专科学校",
+  "重庆青年职业技术学院",
+  "重庆财经职业学院",
+  "重庆科创职业学院",
+  "重庆建筑工程职业学院",
+  "重庆电讯职业学院",
+  "重庆能源职业学院",
+  "重庆商务职业学院",
+  "重庆交通职业学院",
+  "重庆化工职业学院",
+  "重庆旅游职业学院",
+  "重庆安全技术职业学院",
+  "重庆公共运输职业学院",
+  "重庆艺术工程职业学院",
+  "重庆轻工职业学院",
+  "重庆电信职业学院",
+  "重庆经贸职业学院",
+  "重庆幼儿师范高等专科学校",
+  "重庆文化艺术职业学院",
+  "重庆科技职业学院",
+  "重庆资源与环境保护职业学院",
+  "重庆护理职业学院",
+  "重庆理工职业学院",
+  "重庆智能工程职业学院",
+  "重庆健康职业学院",
+  "重庆工信职业学院",
+  "重庆五一职业技术学院",
+  "重庆数字产业职业技术学院",
+  "重庆现代制造职业学院",
+  "重庆农业职业学院",
+  "重庆安防职业学院"
+]);
+// CQ_SCHOOL_LIST_END
+// YITONG_MAJOR_LIST_START
+const YITONG_COLLEGE_MAJORS = new Set([
+  "计算机学院 / 计算机科学与技术",
+  "计算机学院 / 智能科学与技术",
+  "计算机学院 / 电子与计算机工程",
+  "大数据学院 / 数据科学与大数据技术",
+  "大数据学院 / 数字媒体技术",
+  "大数据学院 / 虚拟现实技术",
+  "通信与信息工程学院 / 通信工程",
+  "通信与信息工程学院 / 电子信息工程",
+  "通信与信息工程学院 / 电子信息科学与技术",
+  "通信与信息工程学院 / 电信工程及管理",
+  "通信与信息工程学院 / 人工智能",
+  "智能工程学院 / 机械设计制造及其自动化",
+  "智能工程学院 / 机器人工程",
+  "智能工程学院 / 自动化",
+  "智能工程学院 / 电气工程及其自动化",
+  "智能工程学院 / 轨道交通信号与控制",
+  "智能工程学院 / 车辆工程",
+  "信息安全学院 / 信息安全",
+  "信息安全学院 / 网络工程",
+  "信息安全学院 / 物联网工程",
+  "信息安全学院 / 区块链工程",
+  "信息安全学院 / 网络空间安全",
+  "数字经济商学院 / 财务管理",
+  "数字经济商学院 / 工商管理",
+  "数字经济商学院 / 市场营销",
+  "数字经济商学院 / 资产评估",
+  "数字经济商学院 / 数字经济",
+  "数字经济商学院 / 供应链管理",
+  "数字经济商学院 / 工程管理",
+  "数字经济商学院 / 信息管理与信息系统",
+  "艺术传媒学院 / 广播电视编导",
+  "艺术传媒学院 / 数字媒体艺术",
+  "艺术传媒学院 / 动画",
+  "艺术传媒学院 / 网络与新媒体",
+  "艺术传媒学院 / 视觉传达设计",
+  "戏剧影视学院 / 戏剧影视文学",
+  "戏剧影视学院 / 戏剧影视导演",
+  "戏剧影视学院 / 表演",
+  "戏剧影视学院 / 播音与主持艺术",
+  "大健康管理学院 / 健康服务与管理",
+  "大健康管理学院 / 体育经济与管理",
+  "德国工程学院 / 机械设计制造及其自动化（中外合作办学）",
+  "德国工程学院 / 电气工程及其自动化（中外合作办学）",
+  "外国语学院 / 英语",
+  "外国语学院 / 德语",
+  "国际教育学院 / 软件工程",
+  "国际教育学院 / 互联网金融",
+  "远景学院 / 通识实验班"
+]);
+// YITONG_MAJOR_LIST_END
 const uploadDir = path.join(__dirname, '..', '..', 'uploads');
 fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -733,13 +876,19 @@ router.post('/auth/register', async (request, response, next) => {
     const username = String(request.body.username || '').trim();
     const password = String(request.body.password || '');
     const name = String(request.body.name || '').trim();
+    const invitationCode = String(request.body.invitationCode || request.body.inviteCode || '').trim();
 
-    if (!username || !password || !name) {
-      response.status(400).json({ message: '手机号、密码和昵称不能为空' });
+    if (!username || !password || !name || !invitationCode) {
+      response.status(400).json({ message: '手机号、密码、昵称和邀请码不能为空' });
       return;
     }
     if (password.length < 6) {
       response.status(400).json({ message: '密码至少需要 6 位' });
+      return;
+    }
+
+    if (invitationCode !== REGISTER_INVITATION_CODE) {
+      response.status(403).json({ message: '邀请码错误，请输入正确的邀请码' });
       return;
     }
 
@@ -859,6 +1008,21 @@ router.post('/auth/campus-verify', requireAuth, async (request, response, next) 
 
     if (!realName || !campusName || !studentId || !major || !enrollmentYear) {
       response.status(400).json({ message: '请完整填写校园认证信息' });
+      return;
+    }
+
+    if (!CHONGQING_UNIVERSITIES.has(campusName)) {
+      response.status(400).json({ message: '学校名称必须从重庆市高校名单中选择' });
+      return;
+    }
+
+    if (!YITONG_COLLEGE_MAJORS.has(major)) {
+      response.status(400).json({ message: '院系专业必须从重庆移通学院专业列表中选择' });
+      return;
+    }
+
+    if (!VALID_ENROLLMENT_YEARS.has(enrollmentYear)) {
+      response.status(400).json({ message: '入学年份必须在 2020-2026 范围内' });
       return;
     }
 
@@ -1571,7 +1735,7 @@ router.post('/activities', requireAuth, async (request, response, next) => {
       capacity,
       price: String(request.body.price || '免费').trim() || '免费',
       description,
-      checkInCode: String(request.body.checkInCode || 'CAMPUS2026').trim() || 'CAMPUS2026',
+      checkInCode: String(request.body.checkInCode || 'campus2026').trim() || 'campus2026',
       allowComments: request.body.allowComments !== false,
       publicDisplay: request.body.publicDisplay !== false,
       registrationDeadline: String(request.body.registrationDeadline || '').trim(),
@@ -2031,6 +2195,18 @@ router.post('/activities/:id/join', requireAuth, async (request, response, next)
       user: request.user._id,
     });
     const wasRegistered = enrollment?.status === 'registered';
+    const registeredCount = await Enrollment.countDocuments({
+      activity: activity._id,
+      status: 'registered',
+    });
+    const capacity = Math.max(0, Number(activity.capacity || 0));
+
+    if (!wasRegistered && capacity > 0 && registeredCount >= capacity) {
+      activity.enrolled = registeredCount;
+      await activity.save();
+      response.status(409).json({ message: '活动名额已满，暂时无法报名' });
+      return;
+    }
 
     if (!enrollment) {
       enrollment = await Enrollment.create({
@@ -2043,7 +2219,7 @@ router.post('/activities/:id/join', requireAuth, async (request, response, next)
     }
 
     if (!wasRegistered) {
-      activity.enrolled = Math.min(activity.capacity || Number.MAX_SAFE_INTEGER, activity.enrolled + 1);
+      activity.enrolled = registeredCount + 1;
       await activity.save();
       await createActivityNotifications({
         recipientIds: [request.user._id],
@@ -2695,6 +2871,7 @@ router.get('/me/managed-groups', requireAuth, async (request, response, next) =>
 router.post('/groups', requireAuth, async (request, response, next) => {
   try {
     const name = String(request.body.name || '').trim();
+    const invitationCode = String(request.body.invitationCode || request.body.inviteCode || '').trim();
     if (!name) {
       response.status(400).json({ message: '社群名称不能为空' });
       return;

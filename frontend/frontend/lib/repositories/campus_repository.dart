@@ -338,11 +338,13 @@ class CampusRepository {
     required String username,
     required String password,
     required String name,
+    required String invitationCode,
   }) async {
     final result = await _apiClient.register(
       username: username,
       password: password,
       name: name,
+      invitationCode: invitationCode,
     );
     AuthSession.set(result.token, result.user);
     return result.user;
@@ -687,7 +689,7 @@ class CampusRepository {
     final normalizedActivityId = activityId is CampusActivity
         ? activityId.id
         : activityId.toString();
-    final token = await _requireToken();
+    final token = _requireToken();
     return _apiClient.fetchActivityCheckInCode(
       token: token,
       activityId: normalizedActivityId,

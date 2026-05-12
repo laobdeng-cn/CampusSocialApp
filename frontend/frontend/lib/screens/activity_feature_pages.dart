@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../data/sample_data.dart';
 import '../models/campus_models.dart';
 import '../repositories/campus_repository.dart';
 import '../repositories/campus_event_bus.dart';
@@ -4713,7 +4712,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       _activityImageUrls = existingImages.isNotEmpty
           ? List<String>.from(existingImages)
           : [_posterPreviewUrl].where((url) => url.trim().isNotEmpty).toList();
-      _checkInCodeController.text = 'CAMPUS2026';
+      _checkInCodeController.text = 'campus2026';
       return;
     }
 
@@ -4742,7 +4741,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       'edit init images => ${_activityImageUrls.length}: $_activityImageUrls',
     );
     _posterController.text = _posterPreviewUrl;
-    _checkInCodeController.text = 'CAMPUS2026';
+    _checkInCodeController.text = 'campus2026';
     _loadEditingCheckInCode();
   }
 
@@ -5165,7 +5164,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                 _RealActivityFormField(
                   controller: _checkInCodeController,
                   label: '签到口令',
-                  hintText: '例如：TEST666',
+                  hintText: '例如：campus2026',
                   icon: Icons.lock_rounded,
                 ),
                 const SizedBox(height: 6),
@@ -7186,7 +7185,7 @@ class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
               const SizedBox(height: 12),
               Text(
                 canCheckIn
-                    ? '示例：MUSIC2026 · 口令由现场工作人员公布'
+                    ? '示例：campus2026 · 口令由现场工作人员公布'
                     : '当前状态：${_statusSubtitle(activity)}',
                 style: const TextStyle(color: AppColors.muted, fontSize: 13),
               ),
@@ -10839,7 +10838,6 @@ class _ActivityEnrollmentDetailScreenState
     return false;
   }
 
-  @override
   Widget _buildFavoriteButton() {
     return TextButton.icon(
       onPressed: _isTogglingFavorite ? null : _toggleFavorite,
@@ -10868,6 +10866,7 @@ class _ActivityEnrollmentDetailScreenState
     );
   }
 
+  @override
   Widget build(BuildContext context) {
     final ratio = _activity.capacity <= 0
         ? 0.0
@@ -11684,7 +11683,7 @@ const _activityItems = [
     people: 328,
     capacity: 500,
     registered: false,
-    guests: [kexin, zihao, siyu, xiaobei, xiaochen],
+    guests: <CampusUser>[],
   ),
   _ActivityItem(
     title: 'AI 未来发展趋势讲座',
@@ -11699,7 +11698,7 @@ const _activityItems = [
     people: 256,
     capacity: 300,
     registered: false,
-    guests: [xiaobei, zihao, kexin, siyu, xiaochen],
+    guests: <CampusUser>[],
   ),
   _ActivityItem(
     title: '校园篮球友谊赛',
@@ -11714,7 +11713,7 @@ const _activityItems = [
     people: 192,
     capacity: 260,
     registered: false,
-    guests: [zihao, siyu, xiaobei, kexin, xiaochen],
+    guests: <CampusUser>[],
   ),
   _ActivityItem(
     title: '摄影社团采风活动',
@@ -11729,7 +11728,7 @@ const _activityItems = [
     people: 78,
     capacity: 100,
     registered: false,
-    guests: [kexin, zihao, xiaobei, siyu, xiaochen],
+    guests: <CampusUser>[],
   ),
   _ActivityItem(
     title: '志愿者在行动',
@@ -11744,7 +11743,7 @@ const _activityItems = [
     people: 163,
     capacity: 220,
     registered: false,
-    guests: [kexin, siyu, xiaobei, xiaochen, zihao],
+    guests: <CampusUser>[],
   ),
 ];
 
