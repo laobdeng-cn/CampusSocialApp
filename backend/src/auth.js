@@ -21,7 +21,10 @@ function base64UrlDecode(input) {
 }
 
 function getTokenSecret() {
-  return process.env.AUTH_TOKEN_SECRET || 'campus-social-local-dev-secret';
+  if (!process.env.AUTH_TOKEN_SECRET) {
+    throw new Error('AUTH_TOKEN_SECRET is required');
+  }
+  return process.env.AUTH_TOKEN_SECRET;
 }
 
 function hashPassword(password) {
