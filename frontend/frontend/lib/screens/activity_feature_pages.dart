@@ -264,7 +264,7 @@ class _ActivityAllScreenState extends State<ActivityAllScreen> {
                             padding: const EdgeInsets.only(bottom: 12),
                             child: _ActivitySummaryCard(
                               item: item,
-                              actionLabel: item.realRegistered ? '已报名' : '报名中',
+                              actionLabel: item.realRegistered ? '已报名' : '立即报名',
                               actionOutlined: item.realRegistered,
                               onChanged: _refreshActivities,
                             ),
@@ -592,7 +592,7 @@ class _MyRegisteredActivitiesScreenState
     }
 
     if (activity.isEnded) {
-      _showFeatureMessage(context, '活动回顾功能后续接入');
+      _showFeatureMessage(context, '活动已结束');
       return;
     }
 
@@ -950,7 +950,7 @@ class _RegisteredActivityCard extends StatelessWidget {
   String get _actionLabel {
     if (activity.isCheckInAvailable) return '去签到';
     if (activity.isCheckedIn) return '查看记录';
-    if (activity.isEnded) return '活动回顾';
+    if (activity.isEnded) return '已结束';
     return '查看详情';
   }
 
