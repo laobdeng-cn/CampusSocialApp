@@ -3011,7 +3011,10 @@ class _ChatInputBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _ChatCircleButton(icon: Icons.mic_none_rounded, onTap: () {}),
+          _ChatCircleButton(
+            icon: Icons.mic_none_rounded,
+            onTap: () => _showShellMessage(context, '语音消息功能正在完善中'),
+          ),
           const SizedBox(width: 9),
           Expanded(
             child: Container(
@@ -3533,7 +3536,7 @@ class _MessageNoticeDetailScreen extends StatelessWidget {
           _OutlineActionButton(
             icon: Icons.calendar_month_outlined,
             label: '添加到日历',
-            onTap: () {},
+            onTap: () => _showShellMessage(context, '该功能正在完善中'),
           ),
         ],
       ),
@@ -3775,7 +3778,7 @@ class _InteractionDetailScreen extends StatelessWidget {
                 child: _PrimaryActionButton(
                   icon: Icons.reply_rounded,
                   label: '回复评论',
-                  onTap: () {},
+                  onTap: () => _showShellMessage(context, '该功能正在完善中'),
                 ),
               ),
               const SizedBox(width: 12),
@@ -6495,9 +6498,15 @@ class _UserProfileHeader extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                _RoundIconButton(icon: Icons.ios_share_rounded, onTap: () {}),
+                _RoundIconButton(
+                  icon: Icons.ios_share_rounded,
+                  onTap: () => _showShellMessage(context, '分享功能正在完善中'),
+                ),
                 const SizedBox(width: 12),
-                _RoundIconButton(icon: Icons.more_horiz_rounded, onTap: () {}),
+                _RoundIconButton(
+                  icon: Icons.more_horiz_rounded,
+                  onTap: () => _showShellMessage(context, '更多操作正在完善中'),
+                ),
               ],
             ),
           ),
