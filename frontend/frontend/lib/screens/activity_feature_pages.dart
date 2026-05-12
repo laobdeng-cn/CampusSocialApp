@@ -6029,10 +6029,9 @@ class _ActivitySummaryCard extends StatelessWidget {
     required this.item,
     this.actionLabel,
     this.actionOutlined = false,
-    this.showFavorite = false,
-    this.collectDate,
     this.onChanged,
-  });
+  }) : showFavorite = false,
+       collectDate = null;
 
   final _ActivityItem item;
   final String? actionLabel;
