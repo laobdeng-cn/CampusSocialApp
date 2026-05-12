@@ -1026,9 +1026,18 @@ class CampusRepository {
     return _apiClient.fetchConversations(token: _requireToken());
   }
 
-  Future<CampusConversation> startConversation(CampusUser user) {
+  Future<CampusConversation> startConversation(CampusUser user) async {
     final id = _requireUserId(user);
-    return _apiClient.startConversation(token: _requireToken(), userId: id);
+    final conversation = await _apiClient.startConversation(
+      token: _requireToken(),
+      userId: id,
+    );
+    _emitSync(
+      CampusEventType.notificationChanged,
+      refId: conversation.id,
+      payload: conversation,
+    );
+    return conversation;
   }
 
   Future<List<CampusChatMessage>> fetchConversationMessages(
@@ -1055,15 +1064,21 @@ class CampusRepository {
   Future<CampusChatMessage> sendConversationMessage({
     required String conversationId,
     required String text,
-  }) {
+  }) async {
     if (conversationId.isEmpty) {
       throw const CampusApiException('会话暂未同步到后端');
     }
-    return _apiClient.sendConversationMessage(
+    final message = await _apiClient.sendConversationMessage(
       token: _requireToken(),
       conversationId: conversationId,
       text: text,
     );
+    _emitSync(
+      CampusEventType.notificationChanged,
+      refId: conversationId,
+      payload: message,
+    );
+    return message;
   }
 
   Future<CampusGroup> joinGroup(CampusGroup group) async {
