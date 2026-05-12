@@ -1065,7 +1065,16 @@ class ActivityListCard extends StatelessWidget {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ActivityDetailScreen(activity: activity),
+        builder: (_) => ActivityEnrollmentDetailScreen(
+          activity: activity,
+          initialRegistered:
+              activity.activityStatus.isNotEmpty ||
+              activity.isCheckInNotStarted ||
+              activity.isCheckInAvailable ||
+              activity.isCheckedIn ||
+              activity.isEnded,
+          initialFavorite: activity.isFavorited,
+        ),
       ),
     );
     await onChanged();
@@ -3525,8 +3534,15 @@ class _MessageNoticeDetailScreen extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const ActivityDetailScreen(
+                  builder: (_) => ActivityEnrollmentDetailScreen(
                     activity: _messageNoticeActivity,
+                    initialRegistered:
+                        _messageNoticeActivity.activityStatus.isNotEmpty ||
+                        _messageNoticeActivity.isCheckInNotStarted ||
+                        _messageNoticeActivity.isCheckInAvailable ||
+                        _messageNoticeActivity.isCheckedIn ||
+                        _messageNoticeActivity.isEnded,
+                    initialFavorite: _messageNoticeActivity.isFavorited,
                   ),
                 ),
               );
@@ -6303,7 +6319,16 @@ class _ProfileRealActivityTile extends StatelessWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ActivityDetailScreen(activity: activity),
+            builder: (_) => ActivityEnrollmentDetailScreen(
+              activity: activity,
+              initialRegistered:
+                  activity.activityStatus.isNotEmpty ||
+                  activity.isCheckInNotStarted ||
+                  activity.isCheckInAvailable ||
+                  activity.isCheckedIn ||
+                  activity.isEnded,
+              initialFavorite: activity.isFavorited,
+            ),
           ),
         );
       },
