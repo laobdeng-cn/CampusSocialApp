@@ -570,7 +570,7 @@ const _activityShortcuts = [
   ),
   _ActivityShortcut(
     icon: Icons.groups_2_outlined,
-    label: '我参与的',
+    label: '已签到',
     color: AppColors.orange,
     destination: _ActivityShortcutDestination.participated,
   ),
@@ -920,7 +920,7 @@ Widget _shortcutDestinationPage(_ActivityShortcutDestination destination) {
     case _ActivityShortcutDestination.registered:
       return const MyRegisteredActivitiesScreen();
     case _ActivityShortcutDestination.participated:
-      return const MyParticipatedActivitiesScreen();
+      return const CheckInRecordsScreen();
     case _ActivityShortcutDestination.favorites:
       return const FavoriteActivitiesScreen();
     case _ActivityShortcutDestination.calendar:

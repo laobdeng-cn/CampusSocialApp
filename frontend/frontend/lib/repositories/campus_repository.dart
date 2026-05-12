@@ -559,9 +559,13 @@ class CampusRepository {
 
   Future<CampusActivity> joinActivity(CampusActivity activity) async {
     final id = _requireActivityId(activity);
-    return _replaceCachedActivity(
+    final next = _replaceCachedActivity(
       await _apiClient.joinActivity(token: _requireToken(), activityId: id),
     );
+    _emitSync(CampusEventType.activityChanged, refId: id, payload: next);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<CampusActivity> cancelJoinActivity(CampusActivity activity) async {
@@ -570,7 +574,11 @@ class CampusRepository {
       token: _requireToken(),
       activityId: id,
     );
-    return _replaceCachedActivity(nextActivity);
+    final next = _replaceCachedActivity(nextActivity);
+    _emitSync(CampusEventType.activityChanged, refId: id, payload: next);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<CampusActivity> createActivity({
@@ -616,6 +624,13 @@ class CampusRepository {
       groups: _cachedFeed.groups,
       topics: _cachedFeed.topics,
     );
+    _emitSync(
+      CampusEventType.activityChanged,
+      refId: enriched.id,
+      payload: enriched,
+    );
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
     return enriched;
   }
 
@@ -638,7 +653,7 @@ class CampusRepository {
     String? checkInCode,
   }) async {
     final id = _requireActivityId(activity);
-    return _replaceCachedActivity(
+    final next = _replaceCachedActivity(
       await _apiClient.updateActivity(
         token: _requireToken(),
         activityId: id,
@@ -659,12 +674,19 @@ class CampusRepository {
         checkInCode: checkInCode,
       ),
     );
+    _emitSync(CampusEventType.activityChanged, refId: id, payload: next);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<void> deleteActivity(CampusActivity activity) async {
     final id = _requireActivityId(activity);
     await _apiClient.deleteActivity(token: _requireToken(), activityId: id);
     _removeCachedActivity(id);
+    _emitSync(CampusEventType.activityChanged, refId: id);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
   }
 
   Future<String> fetchActivityCheckInCode({required Object activityId}) async {
@@ -688,12 +710,16 @@ class CampusRepository {
 
   Future<CampusActivity> cancelActivityJoin(CampusActivity activity) async {
     final id = _requireActivityId(activity);
-    return _replaceCachedActivity(
+    final next = _replaceCachedActivity(
       await _apiClient.cancelActivityJoin(
         token: _requireToken(),
         activityId: id,
       ),
     );
+    _emitSync(CampusEventType.activityChanged, refId: id, payload: next);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<CampusActivity> toggleActivityFavorite(CampusActivity activity) async {
@@ -714,9 +740,13 @@ class CampusRepository {
       } catch (_) {}
 
       final after = _cachedFavoriteActivityIds.contains(id);
-      return _replaceCachedActivity(
+      final next = _replaceCachedActivity(
         remoteActivity.copyWith(isFavorited: after),
       );
+      _emitSync(CampusEventType.activityChanged, refId: id, payload: next);
+      _emitSync(CampusEventType.feedChanged);
+      _emitSync(CampusEventType.profileChanged);
+      return next;
     } catch (error) {
       try {
         await _syncFavoriteActivityIds();
@@ -808,11 +838,15 @@ class CampusRepository {
   }) async {
     final targetActivity = activity ?? _firstSyncedActivity();
     final id = _requireActivityId(targetActivity);
-    return _apiClient.checkInActivity(
+    final record = await _apiClient.checkInActivity(
       token: _requireToken(),
       activityId: id,
       code: code,
     );
+    _emitSync(CampusEventType.activityChanged, refId: id);
+    _emitSync(CampusEventType.feedChanged);
+    _emitSync(CampusEventType.profileChanged);
+    return record;
   }
 
   Future<List<CampusCheckInRecord>> fetchCheckInRecords() {

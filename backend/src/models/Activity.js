@@ -1,4 +1,9 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+
+function generateCheckInCode() {
+  return crypto.randomInt(100000, 1000000).toString();
+}
 
 const activitySchema = new mongoose.Schema(
   {
@@ -25,7 +30,7 @@ const activitySchema = new mongoose.Schema(
     capacity: { type: Number, default: 0 },
     price: { type: String, default: '免费' },
     description: { type: String, default: '' },
-    checkInCode: { type: String, default: 'campus2026', trim: true },
+    checkInCode: { type: String, default: generateCheckInCode, trim: true },
     allowComments: { type: Boolean, default: true },
     publicDisplay: { type: Boolean, default: true },
     registrationDeadline: { type: String, default: '' },

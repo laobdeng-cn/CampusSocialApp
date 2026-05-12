@@ -337,7 +337,7 @@ class CampusApiClient {
       'publicDisplay': publicDisplay,
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
-      'checkInCode': checkInCode.isEmpty ? 'campus2026' : checkInCode,
+      if (checkInCode.trim().isNotEmpty) 'checkInCode': checkInCode.trim(),
     }, token: token);
 
     final activity = _readActivityPayload(json);
@@ -394,9 +394,7 @@ class CampusApiClient {
       'description': description,
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
-      'checkInCode': submitCheckInCode.isEmpty
-          ? 'campus2026'
-          : submitCheckInCode,
+      if (submitCheckInCode.isNotEmpty) 'checkInCode': submitCheckInCode,
       'tags': tags,
       'allowComments': allowComments,
       'publicDisplay': publicDisplay,
@@ -1064,7 +1062,7 @@ class CampusApiClient {
       'publicDisplay': publicDisplay,
       'posterUrl': primaryPosterUrl,
       'images': submitImages,
-      'checkInCode': checkInCode.isEmpty ? 'campus2026' : checkInCode,
+      if (checkInCode.trim().isNotEmpty) 'checkInCode': checkInCode.trim(),
     }, token: token);
 
     final activity = _readActivityPayload(json);

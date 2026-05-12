@@ -424,6 +424,7 @@ class CampusActivity {
     required this.price,
     required this.description,
     required this.highlights,
+    this.tags = const [],
     required this.guests,
     this.activityStatus = '',
     this.checkInStatus = '',
@@ -451,6 +452,7 @@ class CampusActivity {
   final String price;
   final String description;
   final List<String> highlights;
+  final List<String> tags;
   final List<CampusUser> guests;
 
   /// 后端活动状态机字段
@@ -520,6 +522,7 @@ class CampusActivity {
       price: _readString(json, 'price', fallback: '免费'),
       description: _readString(json, 'description'),
       highlights: highlights.isEmpty ? tags : highlights,
+      tags: tags,
       guests: _readMapList(
         json,
         'guests',
@@ -548,6 +551,7 @@ class CampusActivity {
     String? location,
     int? enrolled,
     List<String>? highlights,
+    List<String>? tags,
     List<String>? images,
     List<CampusUser>? guests,
     String? activityStatus,
@@ -576,6 +580,7 @@ class CampusActivity {
       price: price,
       description: description,
       highlights: highlights ?? this.highlights,
+      tags: tags ?? this.tags,
       guests: guests ?? this.guests,
       activityStatus: activityStatus ?? this.activityStatus,
       checkInStatus: checkInStatus ?? this.checkInStatus,
