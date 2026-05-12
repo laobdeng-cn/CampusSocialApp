@@ -5197,8 +5197,7 @@ class _CommentTile extends StatelessWidget {
     required this.text,
     required this.likes,
     required this.createdAt,
-    this.reply,
-  });
+  }) : reply = null;
 
   final CampusUser user;
   final String text;
@@ -5418,20 +5417,6 @@ class _TicketInfoRow extends StatelessWidget {
       ],
     );
   }
-}
-
-String _groupActivityActionText(CampusActivity activity) {
-  if (activity.isCheckedIn) return '已签到';
-  if (activity.isEnded) return '已结束';
-  if (activity.activityStatus == 'registered' ||
-      activity.isCheckInNotStarted ||
-      activity.isCheckInAvailable) {
-    return '已报名';
-  }
-  if (activity.capacity > 0 && activity.enrolled >= activity.capacity) {
-    return '已满员';
-  }
-  return '去报名';
 }
 
 class _GroupActivityTile extends StatelessWidget {
