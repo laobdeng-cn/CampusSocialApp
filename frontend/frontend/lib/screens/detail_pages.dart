@@ -1560,7 +1560,10 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
       appBar: AppBar(
         title: const Text('活动详情'),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.ios_share)),
+          IconButton(
+            onPressed: () => _showMessage(context, '分享功能正在完善中'),
+            icon: const Icon(Icons.ios_share),
+          ),
         ],
       ),
       body: ListView(
@@ -1655,7 +1658,10 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                     ],
                   ),
                 ),
-                OutlinedButton(onPressed: () {}, child: const Text('关注')),
+                OutlinedButton(
+                  onPressed: () => _showMessage(context, '已关注主办方'),
+                  child: const Text('关注'),
+                ),
               ],
             ),
           ),
@@ -1670,7 +1676,7 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: () {},
+              onPressed: () => _showMessage(context, '活动介绍已完整展示'),
               label: const Text('展开'),
               icon: const Icon(Icons.keyboard_arrow_down),
             ),
@@ -1871,7 +1877,21 @@ class RegistrationSuccessScreen extends StatelessWidget {
                     ),
                     const Spacer(),
                     TextButton.icon(
-                      onPressed: () {},
+                      onPressed: () {
+                        showDialog<void>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            title: const Text('签到说明'),
+                            content: const Text('活动开始后，请凭电子票或签到码完成现场签到。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('知道了'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                       icon: const Icon(Icons.help_outline, size: 18),
                       label: const Text('签到说明'),
                     ),
@@ -2325,7 +2345,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                   ),
                   const Spacer(),
                   IconButton.filledTonal(
-                    onPressed: () {},
+                    onPressed: () => _showMessage(context, '分享功能正在完善中'),
                     icon: const Icon(Icons.ios_share),
                   ),
                   IconButton.filledTonal(
@@ -3956,7 +3976,10 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
       appBar: AppBar(
         title: const Text('话题详情'),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.ios_share)),
+          IconButton(
+            onPressed: () => _showMessage(context, '分享功能正在完善中'),
+            icon: const Icon(Icons.ios_share),
+          ),
         ],
       ),
       body: ListView(
@@ -4133,7 +4156,8 @@ class _TopicDetailScreenState extends State<TopicDetailScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       OutlinedButton(
-                        onPressed: () {},
+                        onPressed: () =>
+                            _showMessage(context, '已关注 ${user.name}'),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(64, 28),
                           padding: EdgeInsets.zero,
@@ -5434,7 +5458,7 @@ class _GroupActivityTile extends StatelessWidget {
         '${activity.date}  ${activity.time}\n${activity.enrolled}人已报名',
       ),
       isThreeLine: true,
-      trailing: OutlinedButton(onPressed: () {}, child: const Text('报名中')),
+      trailing: const OutlinedButton(onPressed: null, child: Text('报名中')),
       onTap: () {
         Navigator.push(
           context,

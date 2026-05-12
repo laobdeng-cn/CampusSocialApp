@@ -2472,7 +2472,7 @@ class _ChatHeader extends StatelessWidget {
                 ),
               ),
               IconButton(
-                onPressed: () {},
+                onPressed: () => _showShellMessage(context, '更多操作正在完善中'),
                 icon: const Icon(Icons.more_horiz_rounded, size: 30),
               ),
               const SizedBox(width: 10),
@@ -3057,7 +3057,7 @@ class _ChatInputBar extends StatelessWidget {
                     splashRadius: 20,
                   ),
                   IconButton(
-                    onPressed: () {},
+                    onPressed: () => _showShellMessage(context, '图片消息功能正在完善中'),
                     icon: const Icon(
                       Icons.image_outlined,
                       color: AppColors.text,
@@ -3489,7 +3489,10 @@ class _MessageNoticeDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('通知详情'),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
+          IconButton(
+            onPressed: () => _showShellMessage(context, '更多操作正在完善中'),
+            icon: const Icon(Icons.more_horiz),
+          ),
         ],
       ),
       body: ListView(
@@ -3691,7 +3694,10 @@ class _InteractionDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('互动详情'),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
+          IconButton(
+            onPressed: () => _showShellMessage(context, '更多操作正在完善中'),
+            icon: const Icon(Icons.more_horiz),
+          ),
         ],
       ),
       body: ListView(
@@ -4272,7 +4278,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     const Spacer(),
                     IconButton(
-                      onPressed: () {},
+                      onPressed: () =>
+                          _showShellMessage(context, '二维码名片功能正在完善中'),
                       color: Colors.white,
                       icon: const Icon(Icons.crop_free),
                     ),
@@ -9906,7 +9913,10 @@ class _PostFeedCardState extends State<PostFeedCard> {
                   ],
                 ),
               ),
-              IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
+              IconButton(
+                onPressed: () => _showShellMessage(context, '更多操作正在完善中'),
+                icon: const Icon(Icons.more_horiz),
+              ),
             ],
           ),
           const SizedBox(height: 12),
