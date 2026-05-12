@@ -928,6 +928,8 @@ class CampusRepository {
     required String topic,
     required String location,
     required List<String> images,
+    String kind = 'post',
+    String status = 'draft',
   }) {
     return _apiClient.saveDraft(
       token: _requireToken(),
@@ -936,6 +938,8 @@ class CampusRepository {
       topic: topic,
       location: location,
       images: images,
+      kind: kind,
+      status: status,
     );
   }
 

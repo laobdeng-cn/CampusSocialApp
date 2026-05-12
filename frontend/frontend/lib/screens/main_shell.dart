@@ -7779,14 +7779,14 @@ class _DraftBoxScreenState extends State<_DraftBoxScreen> {
       child: FutureBuilder<List<CampusDraft>>(
         future: _future,
         builder: (context, snapshot) {
-          final drafts = snapshot.data ?? const <CampusDraft>[];
+          final allDrafts = snapshot.data ?? const <CampusDraft>[];
+          final drafts = allDrafts
+              .where((draft) => draft.kind != 'activity')
+              .toList(growable: false);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
             children: [
-              const _SegmentedFilterTabs(
-                tabs: ['全部', '帖子草稿', '活动草稿'],
-                compact: true,
-              ),
+              const _SegmentedFilterTabs(tabs: ['全部', '帖子草稿'], compact: true),
               const SizedBox(height: 14),
               if (drafts.isEmpty)
                 const _ProfileEmptyCard(
