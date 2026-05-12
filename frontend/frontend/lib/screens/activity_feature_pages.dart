@@ -800,7 +800,7 @@ class _RegisteredOverviewItem extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Icon(icon, color: color, size: 23),
@@ -1111,7 +1111,7 @@ class _RegisteredStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -1442,7 +1442,7 @@ class _ParticipatedOverviewItem extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Icon(icon, color: color, size: 23),
@@ -1733,7 +1733,7 @@ class _ParticipatedStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -2048,7 +2048,7 @@ class _FavoriteOverviewItem extends StatelessWidget {
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Icon(icon, color: color, size: 23),
@@ -2352,7 +2352,7 @@ class _FavoriteStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -3482,7 +3482,7 @@ class _CheckInPageOverview extends StatelessWidget {
             width: 58,
             height: 58,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Icon(
@@ -3655,7 +3655,9 @@ class _CheckInActivityOption extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: selected ? color.withOpacity(0.08) : const Color(0xFFF8FAFD),
+        color: selected
+            ? color.withValues(alpha: 0.08)
+            : const Color(0xFFF8FAFD),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           onTap: onTap,
@@ -3739,7 +3741,7 @@ class _CheckInStatusPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -3840,7 +3842,7 @@ class _RealStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -4093,6 +4095,7 @@ class _ActivityNotificationsScreenState
 
   Future<void> _openNotification(CampusNotificationRecord record) async {
     await _markRecordRead(record);
+    if (!mounted) return;
 
     final activity = record.activity;
     if (activity?.id.isNotEmpty == true) {
@@ -7672,7 +7675,7 @@ class _ActivityImageView extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
         fit: fit,
-        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+        errorBuilder: (_, _, _) => const _ActivityImagePlaceholder(),
       );
     }
 
@@ -7682,7 +7685,7 @@ class _ActivityImageView extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
         fit: fit,
-        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+        errorBuilder: (_, _, _) => const _ActivityImagePlaceholder(),
       );
     }
 
@@ -7692,7 +7695,7 @@ class _ActivityImageView extends StatelessWidget {
         width: double.infinity,
         height: double.infinity,
         fit: fit,
-        errorBuilder: (_, __, ___) => const _ActivityImagePlaceholder(),
+        errorBuilder: (_, _, _) => const _ActivityImagePlaceholder(),
       );
     }
 
@@ -7899,7 +7902,7 @@ class _RealActivityCategoryDropdown extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       items: [
         for (final item in categories)
           DropdownMenuItem(value: item, child: Text(item)),
@@ -9129,8 +9132,15 @@ class _ActivityEnrollmentDetailScreenState
         : (_activity.enrolled / _activity.capacity).clamp(0.0, 1.0);
     final buttonText = _actionButtonText;
 
-    return WillPopScope(
-      onWillPop: _handleBack,
+    return PopScope<bool>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _handleBack();
+        if (shouldPop && context.mounted) {
+          Navigator.pop(context, _changed);
+        }
+      },
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
