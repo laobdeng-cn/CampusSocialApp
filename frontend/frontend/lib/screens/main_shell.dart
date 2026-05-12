@@ -237,6 +237,75 @@ class _CampusShellState extends State<CampusShell> {
   }
 }
 
+class _FriendRecommendationSection extends StatefulWidget {
+  const _FriendRecommendationSection({required this.users});
+
+  final List<CampusUser> users;
+
+  @override
+  State<_FriendRecommendationSection> createState() =>
+      _FriendRecommendationSectionState();
+}
+
+class _FriendRecommendationSectionState
+    extends State<_FriendRecommendationSection> {
+  int _offset = 0;
+
+  List<CampusUser> get _visibleUsers {
+    final users = widget.users;
+    if (users.length <= 3) return users;
+
+    return List<CampusUser>.generate(3, (index) {
+      return users[(_offset + index) % users.length];
+    });
+  }
+
+  void _refreshRecommendations() {
+    if (widget.users.length <= 3) return;
+    setState(() {
+      _offset = (_offset + 3) % widget.users.length;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleUsers = _visibleUsers;
+
+    return Column(
+      children: [
+        SectionTitle(
+          title: '你可能认识的人',
+          action: TextButton(
+            onPressed: widget.users.length <= 3
+                ? null
+                : _refreshRecommendations,
+            child: const Text(
+              '换一换',
+              style: TextStyle(
+                color: AppColors.blue,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 172,
+          child: ListView.separated(
+            padding: kPagePadding,
+            scrollDirection: Axis.horizontal,
+            itemCount: visibleUsers.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final user = visibleUsers[index];
+              return SizedBox(width: 112, child: _FriendCard(user: user));
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
     required this.feed,
@@ -328,29 +397,7 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
               ),
-              const SectionTitle(
-                title: '你可能认识的人',
-                action: Text(
-                  '换一换',
-                  style: TextStyle(
-                    color: AppColors.blue,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              SizedBox(
-                height: 172,
-                child: ListView.separated(
-                  padding: kPagePadding,
-                  scrollDirection: Axis.horizontal,
-                  itemCount: users.take(3).length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 10),
-                  itemBuilder: (context, index) {
-                    final user = users[index];
-                    return SizedBox(width: 112, child: _FriendCard(user: user));
-                  },
-                ),
-              ),
+              _FriendRecommendationSection(users: users),
               const SectionTitle(title: '校园动态'),
               Padding(
                 padding: kPagePadding,
