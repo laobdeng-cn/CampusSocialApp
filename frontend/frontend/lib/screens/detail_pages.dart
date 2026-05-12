@@ -1034,13 +1034,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       setState(() {
         _post = post;
-        if (post.likes > previousPost.likes) {
-          _postLiked = true;
-        } else if (post.likes < previousPost.likes) {
-          _postLiked = false;
-        } else {
-          _postLiked = nextLiked;
-        }
+        _postLiked = post.likedByMe;
       });
     } catch (error) {
       if (!mounted) return;
