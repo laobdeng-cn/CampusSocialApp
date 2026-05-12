@@ -378,22 +378,16 @@ class HomeScreen extends StatelessWidget {
                   },
                 ),
               ),
-              const SectionTitle(
-                title: '校园故事',
-                action: Text('全部', style: TextStyle(color: AppColors.muted)),
-              ),
+              const SectionTitle(title: '活跃同学'),
               SizedBox(
                 height: 94,
                 child: ListView.separated(
                   padding: kPagePadding,
                   scrollDirection: Axis.horizontal,
-                  itemCount: users.length + 1,
+                  itemCount: users.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 14),
                   itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return const _StoryItem.add();
-                    }
-                    return _StoryItem(user: users[index - 1]);
+                    return _StoryItem(user: users[index]);
                   },
                 ),
               ),
@@ -9968,59 +9962,45 @@ class DiscussionCard extends StatelessWidget {
 }
 
 class _StoryItem extends StatelessWidget {
-  const _StoryItem({required this.user}) : isAdd = false;
-  const _StoryItem.add() : user = xiaobei, isAdd = true;
+  const _StoryItem({required this.user});
 
   final CampusUser user;
-  final bool isAdd;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: isAdd
-          ? null
-          : () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => UserProfileScreen(user: user),
-                ),
-              );
-            },
-      child: SizedBox(
-        width: 66,
-        child: Column(
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(
-                  colors: [AppColors.blue, AppColors.green],
-                ),
-                border: Border.all(color: Colors.white, width: 2),
+    return SizedBox(
+      width: 66,
+      child: Column(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [AppColors.blue, AppColors.green],
               ),
-              child: isAdd
-                  ? Container(
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.blue,
-                      ),
-                      child: const Icon(Icons.add, color: Colors.white),
-                    )
-                  : CampusAvatar(user: user, size: 50),
             ),
-            const SizedBox(height: 6),
-            Text(
-              isAdd ? '发布瞬间' : user.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12),
+            child: SmartImage(
+              url: user.avatarUrl,
+              width: 52,
+              height: 52,
+              borderRadius: 999,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            user.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
