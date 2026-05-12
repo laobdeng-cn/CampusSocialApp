@@ -4976,7 +4976,7 @@ class _LargeActivityResultCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Pill(label: '报名中', color: AppColors.green),
+                    const Pill(label: '立即报名', color: AppColors.green),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -5458,7 +5458,7 @@ class _GroupActivityTile extends StatelessWidget {
         '${activity.date}  ${activity.time}\n${activity.enrolled}人已报名',
       ),
       isThreeLine: true,
-      trailing: const OutlinedButton(onPressed: null, child: Text('报名中')),
+      trailing: const OutlinedButton(onPressed: null, child: Text('已报名')),
       onTap: () {
         Navigator.push(
           context,

@@ -4686,7 +4686,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       _activityImageUrls = existingImages.isNotEmpty
           ? List<String>.from(existingImages)
           : [_posterPreviewUrl].where((url) => url.trim().isNotEmpty).toList();
-      _checkInCodeController.text = 'campus2026';
+      _checkInCodeController.clear();
       return;
     }
 
@@ -4715,7 +4715,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
       'edit init images => ${_activityImageUrls.length}: $_activityImageUrls',
     );
     _posterController.text = _posterPreviewUrl;
-    _checkInCodeController.text = 'campus2026';
+    _checkInCodeController.clear();
     _loadEditingCheckInCode();
   }
 
@@ -5136,7 +5136,7 @@ class _CreateActivityScreenState extends State<CreateActivityScreen> {
                 _RealActivityFormField(
                   controller: _checkInCodeController,
                   label: '签到口令',
-                  hintText: '例如：campus2026',
+                  hintText: '留空则自动生成签到码',
                   icon: Icons.lock_rounded,
                 ),
                 const SizedBox(height: 6),
@@ -6568,7 +6568,7 @@ class _PasswordCheckInCardState extends State<_PasswordCheckInCard> {
               const SizedBox(height: 12),
               Text(
                 canCheckIn
-                    ? '示例：campus2026 · 口令由现场工作人员公布'
+                    ? '系统会自动生成签到码，也可由现场工作人员公布'
                     : '当前状态：${_statusSubtitle(activity)}',
                 style: const TextStyle(color: AppColors.muted, fontSize: 13),
               ),

@@ -1735,7 +1735,7 @@ router.post('/activities', requireAuth, async (request, response, next) => {
       capacity,
       price: String(request.body.price || '免费').trim() || '免费',
       description,
-      checkInCode: String(request.body.checkInCode || 'campus2026').trim() || 'campus2026',
+      checkInCode: String(request.body.checkInCode || '').trim() || undefined,
       allowComments: request.body.allowComments !== false,
       publicDisplay: request.body.publicDisplay !== false,
       registrationDeadline: String(request.body.registrationDeadline || '').trim(),
