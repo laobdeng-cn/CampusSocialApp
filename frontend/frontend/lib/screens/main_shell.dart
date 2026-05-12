@@ -9820,17 +9820,46 @@ class _PostFeedCardState extends State<PostFeedCard> {
   var _isLiking = false;
   var _isFavoriting = false;
 
+  CampusPost? _cachedPostById(String id) {
+    if (id.isEmpty) return null;
+
+    final feed = CampusRepository.instance.cachedFeed;
+    for (final post in feed.posts) {
+      if (post.id == id) return post;
+    }
+
+    for (final group in feed.groups) {
+      for (final post in group.discussions) {
+        if (post.id == id) return post;
+      }
+    }
+
+    for (final topic in feed.topics) {
+      for (final post in topic.posts) {
+        if (post.id == id) return post;
+      }
+    }
+
+    return null;
+  }
+
+  void _syncPostState(CampusPost post, {bool? favorited}) {
+    _post = post;
+    _liked = post.likedByMe;
+
+    if (favorited != null) {
+      _favorited = favorited;
+    } else if (post.saves == 0) {
+      _favorited = false;
+    }
+  }
+
   @override
   void didUpdateWidget(covariant PostFeedCard oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.post.id != widget.post.id ||
-        oldWidget.post.likes != widget.post.likes ||
-        oldWidget.post.saves != widget.post.saves ||
-        oldWidget.post.comments != widget.post.comments) {
-      _post = widget.post;
-      _liked = widget.post.likedByMe;
-      _favorited = widget.post.saves > 0;
+    if (oldWidget.post != widget.post) {
+      _syncPostState(widget.post);
     }
   }
 
@@ -9885,8 +9914,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
       );
       if (!mounted) return;
       setState(() {
-        _post = post;
-        _favorited = post.saves > previousPost.saves || post.saves > 0;
+        _syncPostState(post, favorited: !previousFavorited);
       });
       _showShellMessage(context, _favorited ? '已收藏' : '已取消收藏');
     } catch (error) {
@@ -9902,21 +9930,16 @@ class _PostFeedCardState extends State<PostFeedCard> {
   }
 
   Future<void> _openDetail() async {
-    final changed = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => PostDetailScreen(post: _post)),
     );
 
-    if (changed == true && mounted) {
-      setState(() {
-        _post = _post.copyWith(
-          likes: _post.likes,
-          comments: _post.comments,
-          saves: _post.saves,
-        );
-        _liked = _post.likes > 0;
-        _favorited = _post.saves > 0;
-      });
+    if (!mounted) return;
+
+    final latest = _cachedPostById(_post.id);
+    if (latest != null) {
+      setState(() => _syncPostState(latest));
     }
   }
 
