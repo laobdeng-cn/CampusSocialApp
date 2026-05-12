@@ -763,7 +763,7 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
                   )
                 : ListView.separated(
                     itemCount: _filteredSchools.length,
-                    separatorBuilder: (_, __) =>
+                    separatorBuilder: (_, _) =>
                         const Divider(height: 1, color: AppColors.line),
                     itemBuilder: (context, index) {
                       final school = _filteredSchools[index];
@@ -993,7 +993,7 @@ class _MajorPickerSheetState extends State<_MajorPickerSheet> {
                   )
                 : ListView.separated(
                     itemCount: _filteredItems.length,
-                    separatorBuilder: (_, __) =>
+                    separatorBuilder: (_, _) =>
                         const Divider(height: 1, color: AppColors.line),
                     itemBuilder: (context, index) {
                       final item = _filteredItems[index];
@@ -1171,7 +1171,7 @@ class _EnrollmentYearPickerSheet extends StatelessWidget {
               child: ListView.separated(
                 padding: EdgeInsets.zero,
                 itemCount: _enrollmentYears.length,
-                separatorBuilder: (_, __) =>
+                separatorBuilder: (_, _) =>
                     const Divider(height: 1, color: AppColors.line),
                 itemBuilder: (context, index) {
                   final year = _enrollmentYears[index];
@@ -1685,8 +1685,7 @@ class _AuthInputField extends StatelessWidget {
     this.keyboardType,
     this.obscureText = false,
     this.suffixIcon,
-    this.suffix,
-  });
+  }) : suffix = null;
 
   final IconData icon;
   final String hint;
@@ -1733,26 +1732,6 @@ class _AuthInputField extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _VerificationCodeButton extends StatelessWidget {
-  const _VerificationCodeButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return TextButton(
-      onPressed: () {},
-      style: TextButton.styleFrom(
-        foregroundColor: AppColors.blue,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.line),
-        ),
-      ),
-      child: const Text('获取验证码', style: TextStyle(fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -1889,43 +1868,6 @@ class _DividerLink extends StatelessWidget {
         const Expanded(child: Divider()),
         TextButton(onPressed: onTap, child: Text(label)),
         const Expanded(child: Divider()),
-      ],
-    );
-  }
-}
-
-class _LoginMethod extends StatelessWidget {
-  const _LoginMethod({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 58,
-          height: 58,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.line),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Icon(icon, color: AppColors.blue, size: 30),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          label,
-          style: const TextStyle(color: AppColors.text, fontSize: 14),
-        ),
       ],
     );
   }
