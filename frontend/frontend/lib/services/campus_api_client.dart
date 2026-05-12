@@ -321,10 +321,6 @@ class CampusApiClient {
     final primaryPosterUrl = submitImages.isNotEmpty
         ? submitImages.first
         : cleanPosterUrl;
-    // ignore: avoid_print
-    print(
-      '[api:createActivity] images => ${submitImages.length}: $submitImages',
-    );
 
     final json = await _postJson('/api/activities', {
       'title': title,
@@ -385,10 +381,6 @@ class CampusApiClient {
         ? submitImages.first
         : cleanPosterUrl;
     final submitCheckInCode = (checkInCode ?? '').trim();
-    // ignore: avoid_print
-    print(
-      '[api:updateActivity] images => ${submitImages.length}: $submitImages',
-    );
 
     final json = await _patchJson('/api/activities/$activityId', {
       'title': title,
@@ -704,32 +696,7 @@ class CampusApiClient {
 
   Future<void> clearHistory({required String token}) async {
     const path = '/api/me/history';
-    final tokenTail = token.length <= 6
-        ? token
-        : token.substring(token.length - 6);
-    // 临时日志：清空浏览记录前端请求链路
-    // ignore: avoid_print
-    print(
-      '[front:api:clearHistory] DELETE ' +
-          path +
-          ' tokenLen=' +
-          token.length.toString() +
-          ' tokenTail=' +
-          tokenTail,
-    );
-    try {
-      await _deleteJson(path, token: token);
-      // ignore: avoid_print
-      print('[front:api:clearHistory] success ' + path);
-    } catch (error, stack) {
-      // ignore: avoid_print
-      print(
-        '[front:api:clearHistory] error ' + path + ' => ' + error.toString(),
-      );
-      // ignore: avoid_print
-      print(stack);
-      rethrow;
-    }
+    await _deleteJson(path, token: token);
   }
 
   Future<List<CampusDraft>> fetchDrafts({required String token}) async {
