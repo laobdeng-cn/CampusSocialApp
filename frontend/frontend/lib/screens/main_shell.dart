@@ -2215,6 +2215,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _messageFocusNode = FocusNode();
+  final _scrollController = ScrollController();
   List<CampusChatMessage> _messages = const [];
   late String _conversationId;
   var _isLoading = false;
@@ -2234,6 +2235,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageFocusNode.removeListener(_handleMessageFocusChange);
     _messageController.dispose();
     _messageFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -2243,6 +2245,15 @@ class _ChatScreenState extends State<ChatScreen> {
         _showEmojiPanel = false;
       });
     }
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+    );
   }
 
   void _toggleEmojiPanel() {
@@ -2280,6 +2291,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (!mounted) return;
       setState(() => _messages = messages);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
     } finally {
@@ -2309,6 +2321,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _messages = [..._messages, message];
           _showEmojiPanel = false;
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       }
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
@@ -2356,6 +2369,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : ListView(
+                    controller: _scrollController,
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
