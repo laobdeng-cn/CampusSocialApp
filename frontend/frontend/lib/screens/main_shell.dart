@@ -545,16 +545,7 @@ class ActivitiesScreen extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 24),
           children: [
             const SizedBox(height: 6),
-            const _ActivityCategoryBar(),
-            const SizedBox(height: 14),
-            const _ActivityRecruitBanner(),
-            const SizedBox(height: 14),
-            _ActivityShortcutGrid(onReturn: onRefresh),
-            const SizedBox(height: 14),
-            _HotActivitiesPanel(
-              activities: feed.activities,
-              onChanged: onRefresh,
-            ),
+            _ActivityFilteredSection(feed: feed, onRefresh: onRefresh),
           ],
         ),
       ),
@@ -627,8 +618,81 @@ enum _ActivityShortcutDestination {
   create,
 }
 
+class _ActivityFilteredSection extends StatefulWidget {
+  const _ActivityFilteredSection({required this.feed, required this.onRefresh});
+
+  final CampusFeed feed;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_ActivityFilteredSection> createState() =>
+      _ActivityFilteredSectionState();
+}
+
+class _ActivityFilteredSectionState extends State<_ActivityFilteredSection> {
+  String _selectedCategory = '推荐';
+
+  List<CampusActivity> get _filteredActivities {
+    if (_selectedCategory == '推荐') return widget.feed.activities;
+
+    return widget.feed.activities
+        .where((activity) {
+          final text = [
+            activity.category,
+            activity.title,
+            activity.host,
+            activity.description,
+          ].join(' ');
+
+          if (_selectedCategory == '社团招新') {
+            return text.contains('社团') || text.contains('招新');
+          }
+
+          return text.contains(_selectedCategory);
+        })
+        .toList(growable: false);
+  }
+
+  void _selectCategory(String category) {
+    if (_selectedCategory == category) return;
+    setState(() => _selectedCategory = category);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activities = _filteredActivities;
+
+    return Column(
+      children: [
+        _ActivityCategoryBar(
+          selectedCategory: _selectedCategory,
+          onSelected: _selectCategory,
+        ),
+        const SizedBox(height: 14),
+        const _ActivityRecruitBanner(),
+        const SizedBox(height: 14),
+        _ActivityShortcutGrid(onReturn: widget.onRefresh),
+        const SizedBox(height: 14),
+        _HotActivitiesPanel(
+          activities: activities,
+          onChanged: widget.onRefresh,
+          emptyMessage: _selectedCategory == '推荐'
+              ? '暂无热门活动'
+              : '暂无$_selectedCategory活动',
+        ),
+      ],
+    );
+  }
+}
+
 class _ActivityCategoryBar extends StatelessWidget {
-  const _ActivityCategoryBar();
+  const _ActivityCategoryBar({
+    required this.selectedCategory,
+    required this.onSelected,
+  });
+
+  final String selectedCategory;
+  final ValueChanged<String> onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -652,9 +716,12 @@ class _ActivityCategoryBar extends StatelessWidget {
               },
             );
           }
+
+          final category = _activityCategories[index];
           return _ActivityCategoryChip(
-            label: _activityCategories[index],
-            selected: index == 0,
+            label: category,
+            selected: category == selectedCategory,
+            onTap: () => onSelected(category),
           );
         },
         separatorBuilder: (_, _) => const SizedBox(width: 6),
@@ -873,10 +940,12 @@ class _HotActivitiesPanel extends StatelessWidget {
   const _HotActivitiesPanel({
     required this.activities,
     required this.onChanged,
+    this.emptyMessage = '暂无热门活动',
   });
 
   final List<CampusActivity> activities;
   final Future<void> Function() onChanged;
+  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -953,13 +1022,28 @@ class _HotActivitiesPanel extends StatelessWidget {
                 ],
               ),
             ),
-            for (var index = 0; index < activities.length; index++) ...[
-              if (index > 0) const Divider(),
-              ActivityListCard(
-                activity: activities[index],
-                onChanged: onChanged,
-              ),
-            ],
+            if (activities.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 24, 18, 28),
+                child: Center(
+                  child: Text(
+                    emptyMessage,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+            else
+              for (var index = 0; index < activities.length; index++) ...[
+                if (index > 0) const Divider(),
+                ActivityListCard(
+                  activity: activities[index],
+                  onChanged: onChanged,
+                ),
+              ],
           ],
         ),
       ),
