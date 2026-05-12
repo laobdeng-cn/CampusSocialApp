@@ -18,23 +18,9 @@ const List<String> _enrollmentYears = <String>[
 
 // YITONG_MAJOR_LIST_START
 const Map<String, List<String>> _yitongCollegeMajors = <String, List<String>>{
-  '计算机学院': <String>[
-    '计算机科学与技术',
-    '智能科学与技术',
-    '电子与计算机工程',
-  ],
-  '大数据学院': <String>[
-    '数据科学与大数据技术',
-    '数字媒体技术',
-    '虚拟现实技术',
-  ],
-  '通信与信息工程学院': <String>[
-    '通信工程',
-    '电子信息工程',
-    '电子信息科学与技术',
-    '电信工程及管理',
-    '人工智能',
-  ],
+  '计算机学院': <String>['计算机科学与技术', '智能科学与技术', '电子与计算机工程'],
+  '大数据学院': <String>['数据科学与大数据技术', '数字媒体技术', '虚拟现实技术'],
+  '通信与信息工程学院': <String>['通信工程', '电子信息工程', '电子信息科学与技术', '电信工程及管理', '人工智能'],
   '智能工程学院': <String>[
     '机械设计制造及其自动化',
     '机器人工程',
@@ -43,13 +29,7 @@ const Map<String, List<String>> _yitongCollegeMajors = <String, List<String>>{
     '轨道交通信号与控制',
     '车辆工程',
   ],
-  '信息安全学院': <String>[
-    '信息安全',
-    '网络工程',
-    '物联网工程',
-    '区块链工程',
-    '网络空间安全',
-  ],
+  '信息安全学院': <String>['信息安全', '网络工程', '物联网工程', '区块链工程', '网络空间安全'],
   '数字经济商学院': <String>[
     '财务管理',
     '工商管理',
@@ -60,38 +40,13 @@ const Map<String, List<String>> _yitongCollegeMajors = <String, List<String>>{
     '工程管理',
     '信息管理与信息系统',
   ],
-  '艺术传媒学院': <String>[
-    '广播电视编导',
-    '数字媒体艺术',
-    '动画',
-    '网络与新媒体',
-    '视觉传达设计',
-  ],
-  '戏剧影视学院': <String>[
-    '戏剧影视文学',
-    '戏剧影视导演',
-    '表演',
-    '播音与主持艺术',
-  ],
-  '大健康管理学院': <String>[
-    '健康服务与管理',
-    '体育经济与管理',
-  ],
-  '德国工程学院': <String>[
-    '机械设计制造及其自动化（中外合作办学）',
-    '电气工程及其自动化（中外合作办学）',
-  ],
-  '外国语学院': <String>[
-    '英语',
-    '德语',
-  ],
-  '国际教育学院': <String>[
-    '软件工程',
-    '互联网金融',
-  ],
-  '远景学院': <String>[
-    '通识实验班',
-  ],
+  '艺术传媒学院': <String>['广播电视编导', '数字媒体艺术', '动画', '网络与新媒体', '视觉传达设计'],
+  '戏剧影视学院': <String>['戏剧影视文学', '戏剧影视导演', '表演', '播音与主持艺术'],
+  '大健康管理学院': <String>['健康服务与管理', '体育经济与管理'],
+  '德国工程学院': <String>['机械设计制造及其自动化（中外合作办学）', '电气工程及其自动化（中外合作办学）'],
+  '外国语学院': <String>['英语', '德语'],
+  '国际教育学院': <String>['软件工程', '互联网金融'],
+  '远景学院': <String>['通识实验班'],
 };
 // YITONG_MAJOR_LIST_END
 
@@ -359,11 +314,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       _showAuthMessage(context, '请完整填写注册信息');
       return;
     }
-    if (invitationCode != 'campus2026') {
-      _showAuthMessage(context, '邀请码错误，请输入正确的邀请码');
-      return;
-    }
-
     if (password != confirmPassword) {
       _showAuthMessage(context, '两次输入的密码不一致');
       return;
@@ -586,9 +536,7 @@ class _CampusVerificationScreenState extends State<CampusVerificationScreen> {
                       hint: '真实姓名',
                     ),
                     const SizedBox(height: 14),
-                    _SchoolDropdownField(
-                      controller: _campusNameController,
-                    ),
+                    _SchoolDropdownField(controller: _campusNameController),
                     const SizedBox(height: 14),
                     _AuthInputField(
                       controller: _studentIdController,
@@ -596,15 +544,14 @@ class _CampusVerificationScreenState extends State<CampusVerificationScreen> {
                       hint: '学号',
                     ),
                     const SizedBox(height: 14),
-                    _MajorDropdownField(
-                      controller: _majorController,
-                    ),
+                    _MajorDropdownField(controller: _majorController),
                     const SizedBox(height: 14),
                     _EnrollmentYearDropdownField(
                       controller: _enrollmentYearController,
                     ),
 
-                    const SizedBox(height: 24),                    _PrimaryAuthButton(
+                    const SizedBox(height: 24),
+                    _PrimaryAuthButton(
                       label: _isSubmitting ? '提交中...' : '提交认证',
                       onPressed: _isSubmitting ? null : _submitVerification,
                     ),
@@ -627,7 +574,6 @@ class _CampusVerificationScreenState extends State<CampusVerificationScreen> {
     );
   }
 }
-
 
 // CQ_SCHOOL_DROPDOWN_START
 class _SchoolDropdownField extends StatefulWidget {
@@ -677,7 +623,11 @@ class _SchoolDropdownFieldState extends State<_SchoolDropdownField> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.apartment_rounded, color: AppColors.blue, size: 24),
+            const Icon(
+              Icons.apartment_rounded,
+              color: AppColors.blue,
+              size: 24,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -781,7 +731,10 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
                 color: AppColors.muted,
                 fontWeight: FontWeight.w600,
               ),
-              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.blue),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.blue,
+              ),
               filled: true,
               fillColor: const Color(0xFFF7FAFF),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -823,8 +776,9 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
                           style: TextStyle(
                             color: selected ? AppColors.blue : AppColors.text,
                             fontSize: 16,
-                            fontWeight:
-                                selected ? FontWeight.w900 : FontWeight.w600,
+                            fontWeight: selected
+                                ? FontWeight.w900
+                                : FontWeight.w600,
                           ),
                         ),
                         trailing: selected
@@ -844,7 +798,6 @@ class _SchoolPickerSheetState extends State<_SchoolPickerSheet> {
   }
 }
 // CQ_SCHOOL_DROPDOWN_END
-
 
 // YITONG_MAJOR_DROPDOWN_START
 class _MajorDropdownField extends StatefulWidget {
@@ -942,9 +895,7 @@ class _MajorPickerSheetState extends State<_MajorPickerSheet> {
   List<MapEntry<String, String>> get _allItems {
     return _yitongCollegeMajors.entries
         .expand(
-          (entry) => entry.value.map(
-            (major) => MapEntry(entry.key, major),
-          ),
+          (entry) => entry.value.map((major) => MapEntry(entry.key, major)),
         )
         .toList(growable: false);
   }
@@ -1010,8 +961,10 @@ class _MajorPickerSheetState extends State<_MajorPickerSheet> {
                 color: AppColors.muted,
                 fontWeight: FontWeight.w600,
               ),
-              prefixIcon:
-                  const Icon(Icons.search_rounded, color: AppColors.blue),
+              prefixIcon: const Icon(
+                Icons.search_rounded,
+                color: AppColors.blue,
+              ),
               filled: true,
               fillColor: const Color(0xFFF7FAFF),
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1054,8 +1007,9 @@ class _MajorPickerSheetState extends State<_MajorPickerSheet> {
                           style: TextStyle(
                             color: selected ? AppColors.blue : AppColors.text,
                             fontSize: 16,
-                            fontWeight:
-                                selected ? FontWeight.w900 : FontWeight.w700,
+                            fontWeight: selected
+                                ? FontWeight.w900
+                                : FontWeight.w700,
                           ),
                         ),
                         subtitle: Text(
@@ -1084,7 +1038,6 @@ class _MajorPickerSheetState extends State<_MajorPickerSheet> {
 }
 // YITONG_MAJOR_DROPDOWN_END
 
-
 // ENROLLMENT_YEAR_DROPDOWN_START
 class _EnrollmentYearDropdownField extends StatefulWidget {
   const _EnrollmentYearDropdownField({required this.controller});
@@ -1105,9 +1058,8 @@ class _EnrollmentYearDropdownFieldState
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EnrollmentYearPickerSheet(
-        initialValue: widget.controller.text,
-      ),
+      builder: (_) =>
+          _EnrollmentYearPickerSheet(initialValue: widget.controller.text),
     );
 
     if (selected == null || selected.trim().isEmpty) return;
@@ -1232,15 +1184,13 @@ class _EnrollmentYearPickerSheet extends StatelessWidget {
                       style: TextStyle(
                         color: selected ? AppColors.blue : AppColors.text,
                         fontSize: 18,
-                        fontWeight:
-                            selected ? FontWeight.w900 : FontWeight.w700,
+                        fontWeight: selected
+                            ? FontWeight.w900
+                            : FontWeight.w700,
                       ),
                     ),
                     trailing: selected
-                        ? const Icon(
-                            Icons.check_rounded,
-                            color: AppColors.blue,
-                          )
+                        ? const Icon(Icons.check_rounded, color: AppColors.blue)
                         : null,
                     onTap: () => Navigator.pop(context, year),
                   );
@@ -1253,6 +1203,7 @@ class _EnrollmentYearPickerSheet extends StatelessWidget {
     );
   }
 }
+
 // ENROLLMENT_YEAR_DROPDOWN_END
 void _showAuthMessage(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
@@ -2018,4 +1969,3 @@ class _AgreementFooter extends StatelessWidget {
     );
   }
 }
-
