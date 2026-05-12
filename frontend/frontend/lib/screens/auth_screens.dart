@@ -225,7 +225,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           const _CheckedLabel(label: '记住登录'),
                           const Spacer(),
                           TextButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              _showAuthMessage(context, '请联系管理员重置密码');
+                            },
                             child: const Text('忘记密码？'),
                           ),
                         ],
@@ -244,18 +246,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) => const RegisterScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 22),
-                      _DividerLink(
-                        label: '先去校园认证',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const CampusVerificationScreen(),
                             ),
                           );
                         },
@@ -1851,24 +1841,6 @@ class _InlineLinkRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _DividerLink extends StatelessWidget {
-  const _DividerLink({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Expanded(child: Divider()),
-        TextButton(onPressed: onTap, child: Text(label)),
-        const Expanded(child: Divider()),
-      ],
     );
   }
 }

@@ -293,10 +293,7 @@ class HomeScreen extends StatelessWidget {
                       onPressed: () {
                         const TabSwitchNotification(2).dispatch(context);
                       },
-                      icon: const Badge(
-                        label: Text('3'),
-                        child: Icon(Icons.notifications_none_rounded),
-                      ),
+                      icon: const Icon(Icons.notifications_none_rounded),
                     ),
                   ],
                 ),
