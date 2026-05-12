@@ -113,33 +113,36 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   }
 
   Future<void> _editLocation() async {
-    final controller = TextEditingController(text: _locationController.text);
+    var nextLocation = _locationController.text.trim();
+
     final result = await showDialog<String>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text('所在位置'),
-          content: TextField(
-            controller: controller,
+          content: TextFormField(
+            initialValue: nextLocation,
             autofocus: true,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(hintText: '例如：图书馆 / 大学生活动中心'),
-            onSubmitted: (value) => Navigator.pop(context, value.trim()),
+            onChanged: (value) => nextLocation = value.trim(),
+            onFieldSubmitted: (value) =>
+                Navigator.of(dialogContext).pop(value.trim()),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context, ''),
+              onPressed: () => Navigator.of(dialogContext).pop(''),
               child: const Text('清空'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(nextLocation.trim()),
               child: const Text('保存'),
             ),
           ],
         );
       },
     );
-    controller.dispose();
 
     if (!mounted || result == null) return;
     setState(() => _locationController.text = result.trim());
