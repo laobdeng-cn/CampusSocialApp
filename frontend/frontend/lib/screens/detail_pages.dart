@@ -957,7 +957,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   var _isFavoriting = false;
   var _isFollowingAuthor = false;
   late bool _postLiked = widget.post.likedByMe;
-  var _postFavorited = false;
+  late bool _postFavorited = widget.post.favoritedByMe;
   late bool _authorFollowed = widget.post.author.followedByMe;
 
   @override
@@ -1008,7 +1008,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return record.kind == 'post' && record.post.id == _post.id;
       });
 
-      setState(() => _postFavorited = favorited);
+      setState(() {
+        _postFavorited = favorited;
+        _post = _post.copyWith(favoritedByMe: favorited);
+      });
     } catch (_) {
       // 收藏状态加载失败不影响详情页主流程。
     }
@@ -1051,7 +1054,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _toggleFavorite() async {
     if (_isFavoriting) return;
 
-    final wasFavorited = _postFavorited;
     setState(() => _isFavoriting = true);
 
     try {
@@ -1060,7 +1062,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       setState(() {
         _post = post;
-        _postFavorited = !wasFavorited;
+        _postFavorited = post.favoritedByMe;
       });
 
       _showMessage(context, _postFavorited ? '已收藏' : '已取消收藏');

@@ -220,7 +220,13 @@ class CampusApiClient {
       {},
       token: token,
     );
-    return _readPostPayload(json);
+    final post = _readPostPayload(json);
+    final favoritedValue = json['favoritedByMe'] ?? json['favorited'];
+    return post.copyWith(
+      favoritedByMe: favoritedValue is bool
+          ? favoritedValue
+          : post.favoritedByMe,
+    );
   }
 
   Future<({CampusComment comment, CampusPost post})> createComment({

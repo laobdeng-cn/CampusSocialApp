@@ -9816,7 +9816,7 @@ class PostFeedCard extends StatefulWidget {
 class _PostFeedCardState extends State<PostFeedCard> {
   late CampusPost _post = widget.post;
   late bool _liked = widget.post.likedByMe;
-  late bool _favorited = widget.post.saves > 0;
+  late bool _favorited = widget.post.favoritedByMe;
   var _isLiking = false;
   var _isFavoriting = false;
 
@@ -9847,11 +9847,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
     _post = post;
     _liked = post.likedByMe;
 
-    if (favorited != null) {
-      _favorited = favorited;
-    } else if (post.saves == 0) {
-      _favorited = false;
-    }
+    _favorited = favorited ?? post.favoritedByMe;
   }
 
   @override
@@ -9914,7 +9910,7 @@ class _PostFeedCardState extends State<PostFeedCard> {
       );
       if (!mounted) return;
       setState(() {
-        _syncPostState(post, favorited: !previousFavorited);
+        _syncPostState(post);
       });
       _showShellMessage(context, _favorited ? '已收藏' : '已取消收藏');
     } catch (error) {

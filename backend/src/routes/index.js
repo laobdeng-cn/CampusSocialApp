@@ -1373,7 +1373,14 @@ router.post('/posts/:id/favorite', requireAuth, async (request, response, next) 
 
     await post.save();
     await post.populate('author');
-    response.json({ favorited, post: serializePost(post) });
+
+    response.json({
+      favorited,
+      post: {
+        ...serializePost(post),
+        favoritedByMe: favorited,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -1450,7 +1457,9 @@ router.get('/me/favorites', requireAuth, async (request, response, next) => {
         .map((favorite) => ({
           id: String(favorite._id),
           kind: favorite.activity ? 'activity' : 'post',
-          post: serializePost(favorite.post),
+          post: favorite.post
+            ? { ...serializePost(favorite.post), favoritedByMe: true }
+            : null,
           activity: serializeActivity(favorite.activity),
           createdAt: favorite.createdAt instanceof Date
             ? favorite.createdAt.toISOString()
