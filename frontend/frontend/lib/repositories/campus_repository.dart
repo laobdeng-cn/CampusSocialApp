@@ -23,24 +23,6 @@ bool _isDemoPost(CampusPost post) {
 }
 
 class CampusRepository {
-  static const Set<String> _frontendDemoPostTitlesV2 = {
-    '校园日落拍摄地推荐',
-    '新图书馆自习位怎么预约？求攻略！',
-    '高效复习时间表分享，亲测有效！',
-    '各科目复习资料大全（持续更新）',
-    '图书馆自习打卡',
-    '学校食堂新品测评！',
-  };
-
-  static const List<String> _frontendDemoPostBodyMarksV2 = [
-    '今天的晚霞也太美了',
-    '最近想去新图书馆学习',
-    '根据课程难度和自身情况制定了这份时间表',
-    '整理了一些我用过的网课、书籍和题库资源',
-    '周末也要努力学习呀',
-    '今天试了二楼窗口的新菜',
-  ];
-
   bool _isFrontendDemoPostV2(CampusPost post) {
     return _isDemoPost(post);
   }
