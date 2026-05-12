@@ -1362,7 +1362,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 color: _postFavorited ? AppColors.orange : AppColors.text,
                 onTap: _isFavoriting ? null : _toggleFavorite,
               ),
-              _ActionStat(icon: Icons.ios_share_rounded, value: post.shares),
+              _ActionStat(
+                icon: Icons.ios_share_rounded,
+                value: post.shares,
+                onTap: () => _showMessage(context, '分享功能正在完善中'),
+              ),
             ],
           ),
           const SizedBox(height: 22),
