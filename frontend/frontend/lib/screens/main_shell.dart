@@ -10103,6 +10103,15 @@ class _FriendCardState extends State<_FriendCard> {
   late CampusUser _user = widget.user;
   var _isFollowing = false;
 
+  @override
+  void didUpdateWidget(covariant _FriendCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user.id != widget.user.id) {
+      _user = widget.user;
+      _isFollowing = false;
+    }
+  }
+
   Future<void> _toggleFollow() async {
     if (_isFollowing) return;
     setState(() => _isFollowing = true);
