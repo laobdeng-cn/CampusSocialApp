@@ -8920,13 +8920,42 @@ class _ActivityEnrollmentDetailScreenState
   bool get _isCheckInNotStarted => _activity.isCheckInNotStarted;
   bool get _isCheckInAvailable => _activity.isCheckInAvailable;
   bool get _isCheckedIn => _activity.isCheckedIn;
-  bool get _isEnded => _activity.isEnded;
+  bool get _isEnded {
+    if (_activity.isEnded) return true;
+    if (_activity.statusText.contains('结束')) return true;
+    if (_activity.displayStatusLabel.contains('结束')) return true;
+
+    final endAt = DateTime.tryParse(_activity.endAt);
+    if (endAt != null) {
+      return DateTime.now().isAfter(endAt.toLocal());
+    }
+
+    final dateMatch = RegExp(
+      r'(\d{1,2})月(\d{1,2})日',
+    ).firstMatch(_activity.date);
+    if (dateMatch == null) return false;
+
+    final month = int.tryParse(dateMatch.group(1) ?? '');
+    final day = int.tryParse(dateMatch.group(2) ?? '');
+    if (month == null || day == null) return false;
+
+    final timeMatch = RegExp(
+      r'(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})',
+    ).firstMatch(_activity.time);
+
+    final endHour = int.tryParse(timeMatch?.group(3) ?? '23') ?? 23;
+    final endMinute = int.tryParse(timeMatch?.group(4) ?? '59') ?? 59;
+
+    final now = DateTime.now();
+    final endedAt = DateTime(now.year, month, day, endHour, endMinute);
+    return now.isAfter(endedAt);
+  }
 
   String get _currentStatusText {
     if (!_registered) return '';
     if (_activity.statusText.isNotEmpty) return _activity.statusText;
     if (_isCheckedIn) return '已签到';
-    if (_isEnded) return '活动已结束';
+    if (_isEnded) return '已结束';
     if (_isCheckInAvailable) return '可签到';
     if (_isCheckInNotStarted) return '签到未开始';
     return '已报名';
@@ -8936,13 +8965,13 @@ class _ActivityEnrollmentDetailScreenState
     if (_isSubmitting) return '处理中...';
 
     if (!_registered) {
-      if (_isEnded) return '活动已结束';
+      if (_isEnded) return '已结束';
       if (_isFull) return '名额已满';
       return '立即报名';
     }
 
     if (_isCheckedIn) return '已签到';
-    if (_isEnded) return '活动已结束';
+    if (_isEnded) return '已结束';
     if (_isCheckInAvailable) return '去签到';
 
     return '取消报名';

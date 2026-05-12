@@ -1473,10 +1473,19 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
     try {
       final activities = await CampusRepository.instance.fetchMyActivities();
       if (!mounted) return;
+      CampusActivity? matchedActivity;
+      for (final activity in activities) {
+        if (activity.id == _activity.id) {
+          matchedActivity = activity;
+          break;
+        }
+      }
+
       setState(() {
-        _isRegistered = activities.any(
-          (activity) => activity.id == _activity.id,
-        );
+        _isRegistered = matchedActivity != null;
+        if (matchedActivity != null) {
+          _activity = matchedActivity;
+        }
       });
     } catch (_) {
       // Keep the default call-to-action for visitors who are not signed in yet.
@@ -1521,6 +1530,10 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
 
   Future<void> _toggleRegistration() async {
     if (_isSubmitting) return;
+    if (_activity.isEnded) {
+      _showMessage(context, '活动已结束');
+      return;
+    }
 
     setState(() => _isSubmitting = true);
     try {
@@ -1783,12 +1796,21 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                       ? '处理中...'
                       : _isCheckingRegistration
                       ? '同步状态...'
+                      : activity.isEnded
+                      ? '已结束'
                       : _isRegistered
                       ? '取消报名'
                       : '立即报名',
-                  color: _isRegistered ? AppColors.red : AppColors.green,
-                  onPressed: _isCheckingRegistration
-                      ? () {}
+                  color: activity.isEnded
+                      ? AppColors.muted
+                      : _isRegistered
+                      ? AppColors.red
+                      : AppColors.green,
+                  onPressed: (_isCheckingRegistration || activity.isEnded)
+                      ? () => _showMessage(
+                          context,
+                          activity.isEnded ? '活动已结束' : '正在同步报名状态',
+                        )
                       : _toggleRegistration,
                 ),
               ),
