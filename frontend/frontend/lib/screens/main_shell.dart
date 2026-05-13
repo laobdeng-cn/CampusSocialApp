@@ -3375,32 +3375,46 @@ class _ChatImagePreviewScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: SafeArea(
-        child: Center(
-          child: Hero(
-            tag: 'chat-image-$imageUrl',
-            child: InteractiveViewer(
-              minScale: 0.8,
-              maxScale: 4,
-              child: Image.network(
-                imageUrl,
-                fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  );
-                },
-                errorBuilder: (context, error, stackTrace) {
-                  return const Center(
-                    child: Text(
-                      '图片加载失败',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  );
-                },
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.pop(context),
+                child: const SizedBox.expand(),
               ),
             ),
-          ),
+            Center(
+              child: GestureDetector(
+                onTap: () {},
+                child: Hero(
+                  tag: 'chat-image-$imageUrl',
+                  child: InteractiveViewer(
+                    minScale: 0.8,
+                    maxScale: 4,
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Text(
+                            '图片加载失败',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
