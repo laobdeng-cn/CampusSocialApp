@@ -1061,6 +1061,24 @@ class CampusRepository {
     _emitSync(CampusEventType.notificationChanged, refId: conversationId);
   }
 
+  Future<void> clearConversationMessages(String conversationId) async {
+    if (conversationId.isEmpty) return;
+    await _apiClient.clearConversationMessages(
+      token: _requireToken(),
+      conversationId: conversationId,
+    );
+    _emitSync(CampusEventType.notificationChanged, refId: conversationId);
+  }
+
+  Future<void> deleteConversation(String conversationId) async {
+    if (conversationId.isEmpty) return;
+    await _apiClient.deleteConversation(
+      token: _requireToken(),
+      conversationId: conversationId,
+    );
+    _emitSync(CampusEventType.notificationChanged, refId: conversationId);
+  }
+
   Future<CampusChatMessage> sendConversationMessage({
     required String conversationId,
     required String text,

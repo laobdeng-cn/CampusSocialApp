@@ -876,6 +876,23 @@ class CampusApiClient {
     );
   }
 
+  Future<void> clearConversationMessages({
+    required String token,
+    required String conversationId,
+  }) async {
+    await _deleteJson(
+      '/api/conversations/$conversationId/messages',
+      token: token,
+    );
+  }
+
+  Future<void> deleteConversation({
+    required String token,
+    required String conversationId,
+  }) async {
+    await _deleteJson('/api/conversations/$conversationId', token: token);
+  }
+
   Future<CampusChatMessage> sendConversationMessage({
     required String token,
     required String conversationId,

@@ -2821,6 +2821,48 @@ router.post('/conversations/:id/messages', requireAuth, async (request, response
   }
 });
 
+router.delete('/conversations/:id/messages', requireAuth, async (request, response, next) => {
+  try {
+    const conversation = await findConversationOr404(
+      request.params.id,
+      request.user._id,
+      response
+    );
+    if (!conversation) return;
+
+    await Message.deleteMany({ conversation: conversation._id });
+    conversation.lastMessage = '';
+    await conversation.save();
+
+    response.json({
+      ok: true,
+      conversation: serializeConversation(conversation, request.user._id, 0),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/conversations/:id', requireAuth, async (request, response, next) => {
+  try {
+    const conversation = await findConversationOr404(
+      request.params.id,
+      request.user._id,
+      response
+    );
+    if (!conversation) return;
+
+    await Promise.all([
+      Message.deleteMany({ conversation: conversation._id }),
+      conversation.deleteOne(),
+    ]);
+
+    response.json({ ok: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/me/groups', requireAuth, async (request, response, next) => {
   try {
     const memberships = await GroupMembership.find({

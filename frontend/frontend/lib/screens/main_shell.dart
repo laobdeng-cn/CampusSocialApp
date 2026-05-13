@@ -2346,6 +2346,152 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _openContactProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(user: widget.contact),
+      ),
+    );
+  }
+
+  Future<bool> _confirmChatAction({
+    required String title,
+    required String content,
+    required String confirmText,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: Text(confirmText),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result == true;
+  }
+
+  Future<void> _clearConversationMessages() async {
+    if (_isSending) return;
+
+    if (_conversationId.isEmpty) {
+      setState(() => _messages = const []);
+      return;
+    }
+
+    final confirmed = await _confirmChatAction(
+      title: '清空聊天记录',
+      content: '确定清空和 ${widget.displayName} 的全部聊天记录吗？',
+      confirmText: '清空',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isSending = true);
+    try {
+      await CampusRepository.instance.clearConversationMessages(
+        _conversationId,
+      );
+      if (!mounted) return;
+      setState(() => _messages = const []);
+      _showShellMessage(context, '聊天记录已清空');
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _deleteConversation() async {
+    if (_isSending) return;
+
+    final confirmed = await _confirmChatAction(
+      title: '删除会话',
+      content: '确定删除和 ${widget.displayName} 的会话吗？聊天记录也会一起删除。',
+      confirmText: '删除',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _isSending = true);
+    try {
+      if (_conversationId.isNotEmpty) {
+        await CampusRepository.instance.deleteConversation(_conversationId);
+      }
+      if (!mounted) return;
+      Navigator.pop(context, true);
+      _showShellMessage(context, '会话已删除');
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _openChatOptions() async {
+    FocusScope.of(context).unfocus();
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.person_outline_rounded),
+                title: const Text('查看资料'),
+                onTap: () => Navigator.of(sheetContext).pop('profile'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cleaning_services_outlined),
+                title: const Text('清空聊天记录'),
+                onTap: () => Navigator.of(sheetContext).pop('clear'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline_rounded),
+                textColor: AppColors.red,
+                iconColor: AppColors.red,
+                title: const Text('删除会话'),
+                onTap: () => Navigator.of(sheetContext).pop('delete'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case 'profile':
+        _openContactProfile();
+        break;
+      case 'clear':
+        await _clearConversationMessages();
+        break;
+      case 'delete':
+        await _deleteConversation();
+        break;
+    }
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSending) return;
@@ -2418,6 +2564,7 @@ class _ChatScreenState extends State<ChatScreen> {
             contact: widget.contact,
             displayName: widget.displayName,
             online: widget.online,
+            onMoreTap: _openChatOptions,
           ),
           Expanded(
             child: _isLoading
@@ -2484,11 +2631,13 @@ class _ChatHeader extends StatelessWidget {
     required this.contact,
     required this.displayName,
     required this.online,
+    required this.onMoreTap,
   });
 
   final CampusUser contact;
   final String displayName;
   final bool online;
+  final VoidCallback onMoreTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2550,7 +2699,7 @@ class _ChatHeader extends StatelessWidget {
                 ),
               ),
               IconButton(
-                onPressed: () => _showShellMessage(context, '更多操作正在完善中'),
+                onPressed: onMoreTap,
                 icon: const Icon(Icons.more_horiz_rounded, size: 30),
               ),
               const SizedBox(width: 10),
