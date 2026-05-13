@@ -3,6 +3,9 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../data/sample_data.dart';
 import '../models/campus_feed.dart';
@@ -2218,11 +2221,16 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
+  final _audioRecorder = AudioRecorder();
+  final _audioPlayer = AudioPlayer();
   Timer? _pollingTimer;
+  DateTime? _recordingStartedAt;
+  String? _playingAudioUrl;
   List<CampusChatMessage> _messages = const [];
   late String _conversationId;
   var _isLoading = false;
   var _isSending = false;
+  var _isRecording = false;
   var _showEmojiPanel = false;
 
   @override
@@ -2241,6 +2249,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
+    _audioRecorder.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -2263,7 +2273,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
     return left.last.id == right.last.id &&
         left.last.text == right.last.text &&
-        left.last.imageUrl == right.last.imageUrl;
+        left.last.imageUrl == right.last.imageUrl &&
+        left.last.audioUrl == right.last.audioUrl;
   }
 
   Future<void> _refreshMessagesSilently() async {
@@ -2350,6 +2361,118 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     _conversationId = conversation.id;
     _startPollingMessages();
+  }
+
+  Future<void> _startVoiceRecording() async {
+    if (_isSending || _isRecording) return;
+
+    try {
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) {
+        if (mounted) _showShellMessage(context, '请允许麦克风权限后再发送语音');
+        return;
+      }
+
+      final directory = await getTemporaryDirectory();
+      final filePath =
+          '${directory.path}/chat_voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: filePath,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _isRecording = true;
+        _recordingStartedAt = DateTime.now();
+      });
+      _showShellMessage(context, '正在录音，松开发送');
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    }
+  }
+
+  Future<void> _finishVoiceRecording() async {
+    if (!_isRecording) return;
+
+    final startedAt = _recordingStartedAt;
+    setState(() {
+      _isRecording = false;
+      _recordingStartedAt = null;
+    });
+
+    try {
+      final filePath = await _audioRecorder.stop();
+      if (filePath == null || filePath.isEmpty) return;
+
+      final duration = startedAt == null
+          ? 1
+          : DateTime.now().difference(startedAt).inSeconds.clamp(1, 60).toInt();
+
+      setState(() => _isSending = true);
+      await _ensureConversation();
+
+      final audioUrl = await CampusRepository.instance.uploadAudio(
+        filePath,
+        purpose: 'chat',
+      );
+
+      final message = await CampusRepository.instance.sendConversationMessage(
+        conversationId: _conversationId,
+        text: '[语音]',
+        type: 'audio',
+        audioUrl: audioUrl,
+        duration: duration,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _messages = [..._messages, message];
+        _showEmojiPanel = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    if (!_isRecording) return;
+    try {
+      await _audioRecorder.stop();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _isRecording = false;
+      _recordingStartedAt = null;
+    });
+    _showShellMessage(context, '已取消录音');
+  }
+
+  Future<void> _toggleAudioPlayback(CampusChatMessage message) async {
+    if (message.audioUrl.isEmpty) return;
+
+    try {
+      if (_playingAudioUrl == message.audioUrl && _audioPlayer.playing) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _playingAudioUrl = null);
+        return;
+      }
+
+      await _audioPlayer.stop();
+      if (mounted) setState(() => _playingAudioUrl = message.audioUrl);
+      await _audioPlayer.setUrl(message.audioUrl);
+      await _audioPlayer.play();
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted && _playingAudioUrl == message.audioUrl) {
+        setState(() => _playingAudioUrl = null);
+      }
+    }
   }
 
   Future<void> _sendImageMessage() async {
@@ -2588,6 +2711,22 @@ class _ChatScreenState extends State<ChatScreen> {
                   );
           }
 
+          if (message.isAudio) {
+            return message.isMine
+                ? _OutgoingAudioChatBubble(
+                    user: currentUser,
+                    message: message,
+                    isPlaying: _playingAudioUrl == message.audioUrl,
+                    onTap: () => _toggleAudioPlayback(message),
+                  )
+                : _IncomingAudioChatBubble(
+                    user: widget.contact,
+                    message: message,
+                    isPlaying: _playingAudioUrl == message.audioUrl,
+                    onTap: () => _toggleAudioPlayback(message),
+                  );
+          }
+
           return message.isMine
               ? _OutgoingChatBubble(
                   user: currentUser,
@@ -2659,9 +2798,13 @@ class _ChatScreenState extends State<ChatScreen> {
             controller: _messageController,
             focusNode: _messageFocusNode,
             isSending: _isSending,
+            isRecording: _isRecording,
             onSend: _sendMessage,
             onEmojiTap: _toggleEmojiPanel,
             onImageTap: _sendImageMessage,
+            onVoiceLongPressStart: _startVoiceRecording,
+            onVoiceLongPressEnd: _finishVoiceRecording,
+            onVoiceLongPressCancel: _cancelVoiceRecording,
           ),
         ],
       ),
@@ -3421,6 +3564,144 @@ class _ChatImagePreviewScreen extends StatelessWidget {
   }
 }
 
+class _OutgoingAudioChatBubble extends StatelessWidget {
+  const _OutgoingAudioChatBubble({
+    required this.user,
+    required this.message,
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  final CampusUser user;
+  final CampusChatMessage message;
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(72, 8, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _AudioBubble(
+            duration: message.duration,
+            isMine: true,
+            isPlaying: isPlaying,
+            onTap: onTap,
+          ),
+          const SizedBox(width: 8),
+          CampusAvatar(user: user, size: 36),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncomingAudioChatBubble extends StatelessWidget {
+  const _IncomingAudioChatBubble({
+    required this.user,
+    required this.message,
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  final CampusUser user;
+  final CampusChatMessage message;
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 72, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          CampusAvatar(user: user, size: 36),
+          const SizedBox(width: 8),
+          _AudioBubble(
+            duration: message.duration,
+            isMine: false,
+            isPlaying: isPlaying,
+            onTap: onTap,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AudioBubble extends StatelessWidget {
+  const _AudioBubble({
+    required this.duration,
+    required this.isMine,
+    required this.isPlaying,
+    required this.onTap,
+  });
+
+  final int duration;
+  final bool isMine;
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = duration <= 0 ? 1 : duration;
+    final width = (88 + seconds * 4).clamp(104, 210).toDouble();
+
+    return Material(
+      color: isMine ? AppColors.blue : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          width: width,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: isMine ? AppColors.blue : AppColors.line),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isPlaying
+                    ? Icons.pause_circle_filled_rounded
+                    : Icons.play_circle_fill_rounded,
+                color: isMine ? Colors.white : AppColors.blue,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isPlaying ? '播放中' : '语音消息',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isMine ? Colors.white : AppColors.ink,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '$seconds"',
+                style: TextStyle(
+                  color: isMine
+                      ? Colors.white.withValues(alpha: 0.85)
+                      : AppColors.muted,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ChatInputBar extends StatelessWidget {
   const _ChatInputBar({
     required this.controller,
@@ -3428,7 +3709,11 @@ class _ChatInputBar extends StatelessWidget {
     required this.onSend,
     required this.onEmojiTap,
     required this.onImageTap,
+    required this.onVoiceLongPressStart,
+    required this.onVoiceLongPressEnd,
+    required this.onVoiceLongPressCancel,
     required this.isSending,
+    required this.isRecording,
   });
 
   final TextEditingController controller;
@@ -3436,7 +3721,11 @@ class _ChatInputBar extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onEmojiTap;
   final VoidCallback onImageTap;
+  final VoidCallback onVoiceLongPressStart;
+  final VoidCallback onVoiceLongPressEnd;
+  final VoidCallback onVoiceLongPressCancel;
   final bool isSending;
+  final bool isRecording;
 
   @override
   Widget build(BuildContext context) {
@@ -3454,8 +3743,12 @@ class _ChatInputBar extends StatelessWidget {
       child: Row(
         children: [
           _ChatCircleButton(
-            icon: Icons.mic_none_rounded,
-            onTap: () => _showShellMessage(context, '语音消息功能正在完善中'),
+            icon: isRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+            isActive: isRecording,
+            onTap: () => _showShellMessage(context, '按住麦克风录音，松开发送'),
+            onLongPressStart: isSending ? null : onVoiceLongPressStart,
+            onLongPressEnd: isSending ? null : onVoiceLongPressEnd,
+            onLongPressCancel: isSending ? null : onVoiceLongPressCancel,
           ),
           const SizedBox(width: 9),
           Expanded(
@@ -3549,25 +3842,51 @@ class _ChatInputBar extends StatelessWidget {
 }
 
 class _ChatCircleButton extends StatelessWidget {
-  const _ChatCircleButton({required this.icon, required this.onTap});
+  const _ChatCircleButton({
+    required this.icon,
+    required this.onTap,
+    this.onLongPressStart,
+    this.onLongPressEnd,
+    this.onLongPressCancel,
+    this.isActive = false,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final VoidCallback? onLongPressStart;
+  final VoidCallback? onLongPressEnd;
+  final VoidCallback? onLongPressCancel;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.line),
+    return GestureDetector(
+      onLongPressStart: onLongPressStart == null
+          ? null
+          : (_) => onLongPressStart?.call(),
+      onLongPressEnd: onLongPressEnd == null
+          ? null
+          : (_) => onLongPressEnd?.call(),
+      onLongPressCancel: onLongPressCancel,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: isActive ? AppColors.blue : Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isActive ? AppColors.blue : AppColors.line,
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: isActive ? Colors.white : AppColors.text,
+            size: 23,
+          ),
         ),
-        child: Icon(icon, color: AppColors.text, size: 23),
       ),
     );
   }
