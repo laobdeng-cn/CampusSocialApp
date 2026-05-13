@@ -195,6 +195,30 @@ const uploadImage = multer({
   },
 });
 
+const audioStorage = multer.diskStorage({
+  destination: (_request, _file, callback) => callback(null, uploadDir),
+  filename: (_request, file, callback) => {
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const safeExtension = ['.m4a', '.mp3', '.aac', '.wav', '.webm', '.ogg', '.mp4'].includes(extension)
+      ? extension
+      : '.m4a';
+    callback(null, `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${safeExtension}`);
+  },
+});
+
+const uploadAudio = multer({
+  storage: audioStorage,
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    const mimetype = String(file.mimetype || '').toLowerCase();
+    if (!mimetype.startsWith('audio/') && mimetype !== 'video/mp4') {
+      callback(new Error('Only audio uploads are allowed.'));
+      return;
+    }
+    callback(null, true);
+  },
+});
+
 function publicUser(user) {
   if (!user) return null;
   if (typeof user !== 'object') {
@@ -451,6 +475,8 @@ function serializeMessage(message, currentUserId) {
     type: plain.type || 'text',
     text: plain.text || '',
     imageUrl: plain.imageUrl || '',
+    audioUrl: plain.audioUrl || '',
+    duration: Number(plain.duration || 0),
     sender: publicUser(plain.sender),
     isMine: String(plain.sender?._id || plain.sender || '') === String(currentUserId),
     createdAt: plain.createdAt instanceof Date
@@ -668,6 +694,22 @@ router.post('/uploads/image', requireAuth, uploadImage.single('image'), (request
     purpose: String(request.body.purpose || 'general'),
   });
 });
+
+router.post('/uploads/audio', requireAuth, uploadAudio.single('audio'), (request, response) => {
+  if (!request.file) {
+    response.status(400).json({ message: '请选择要上传的语音' });
+    return;
+  }
+
+  const url = `${request.protocol}://${request.get('host')}/uploads/${request.file.filename}`;
+  response.status(201).json({
+    url,
+    path: `/uploads/${request.file.filename}`,
+    filename: request.file.filename,
+    purpose: String(request.body.purpose || 'chat'),
+  });
+});
+
 
 function generateCheckInCode() {
   return `ACT${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
@@ -2779,9 +2821,12 @@ router.get('/conversations/:id/messages', requireAuth, async (request, response,
 
 router.post('/conversations/:id/messages', requireAuth, async (request, response, next) => {
   try {
-    const type = String(request.body.type || 'text').trim() === 'image' ? 'image' : 'text';
+    const rawType = String(request.body.type || 'text').trim();
+    const type = ['image', 'audio'].includes(rawType) ? rawType : 'text';
     const text = String(request.body.text || '').trim();
     const imageUrl = String(request.body.imageUrl || '').trim();
+    const audioUrl = String(request.body.audioUrl || '').trim();
+    const duration = Math.max(0, Number.parseInt(request.body.duration || 0, 10) || 0);
 
     if (type === 'text' && !text) {
       response.status(400).json({ message: '消息内容不能为空' });
@@ -2790,6 +2835,11 @@ router.post('/conversations/:id/messages', requireAuth, async (request, response
 
     if (type === 'image' && !imageUrl) {
       response.status(400).json({ message: '图片地址不能为空' });
+      return;
+    }
+
+    if (type === 'audio' && !audioUrl) {
+      response.status(400).json({ message: '语音地址不能为空' });
       return;
     }
 
@@ -2804,11 +2854,14 @@ router.post('/conversations/:id/messages', requireAuth, async (request, response
       conversation: conversation._id,
       sender: request.user._id,
       type,
-      text: type === 'image' ? (text || '[图片]') : text,
+      text: type === 'image' ? (text || '[图片]') : type === 'audio' ? (text || '[语音]') : text,
       imageUrl: type === 'image' ? imageUrl : '',
+      audioUrl: type === 'audio' ? audioUrl : '',
+      duration: type === 'audio' ? duration : 0,
       readBy: [request.user._id],
     });
-    conversation.lastMessage = type === 'image' ? '[图片]' : text;
+
+    conversation.lastMessage = type === 'image' ? '[图片]' : type === 'audio' ? '[语音]' : text;
     await conversation.save();
     await message.populate('sender');
 
