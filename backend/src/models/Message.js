@@ -13,7 +13,14 @@ const messageSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
-    text: { type: String, required: true, trim: true },
+    type: {
+      type: String,
+      enum: ['text', 'image'],
+      default: 'text',
+      index: true,
+    },
+    text: { type: String, default: '', trim: true },
+    imageUrl: { type: String, default: '', trim: true },
     readBy: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },
   { timestamps: true }

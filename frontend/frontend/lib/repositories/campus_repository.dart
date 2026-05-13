@@ -1064,6 +1064,8 @@ class CampusRepository {
   Future<CampusChatMessage> sendConversationMessage({
     required String conversationId,
     required String text,
+    String type = 'text',
+    String imageUrl = '',
   }) async {
     if (conversationId.isEmpty) {
       throw const CampusApiException('会话暂未同步到后端');
@@ -1072,6 +1074,8 @@ class CampusRepository {
       token: _requireToken(),
       conversationId: conversationId,
       text: text,
+      type: type,
+      imageUrl: imageUrl,
     );
     _emitSync(
       CampusEventType.notificationChanged,

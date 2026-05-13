@@ -448,6 +448,9 @@ function serializeMessage(message, currentUserId) {
   return {
     ...plain,
     id: String(plain._id || plain.id || ''),
+    type: plain.type || 'text',
+    text: plain.text || '',
+    imageUrl: plain.imageUrl || '',
     sender: publicUser(plain.sender),
     isMine: String(plain.sender?._id || plain.sender || '') === String(currentUserId),
     createdAt: plain.createdAt instanceof Date
@@ -2776,9 +2779,17 @@ router.get('/conversations/:id/messages', requireAuth, async (request, response,
 
 router.post('/conversations/:id/messages', requireAuth, async (request, response, next) => {
   try {
+    const type = String(request.body.type || 'text').trim() === 'image' ? 'image' : 'text';
     const text = String(request.body.text || '').trim();
-    if (!text) {
+    const imageUrl = String(request.body.imageUrl || '').trim();
+
+    if (type === 'text' && !text) {
       response.status(400).json({ message: '消息内容不能为空' });
+      return;
+    }
+
+    if (type === 'image' && !imageUrl) {
+      response.status(400).json({ message: '图片地址不能为空' });
       return;
     }
 
@@ -2792,10 +2803,12 @@ router.post('/conversations/:id/messages', requireAuth, async (request, response
     const message = await Message.create({
       conversation: conversation._id,
       sender: request.user._id,
-      text,
+      type,
+      text: type === 'image' ? (text || '[图片]') : text,
+      imageUrl: type === 'image' ? imageUrl : '',
       readBy: [request.user._id],
     });
-    conversation.lastMessage = text;
+    conversation.lastMessage = type === 'image' ? '[图片]' : text;
     await conversation.save();
     await message.populate('sender');
 

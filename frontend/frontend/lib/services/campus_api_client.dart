@@ -880,10 +880,17 @@ class CampusApiClient {
     required String token,
     required String conversationId,
     required String text,
+    String type = 'text',
+    String imageUrl = '',
   }) async {
+    final body = <String, dynamic>{'type': type, 'text': text};
+    if (imageUrl.trim().isNotEmpty) {
+      body['imageUrl'] = imageUrl.trim();
+    }
+
     final json = await _postJson(
       '/api/conversations/$conversationId/messages',
-      {'text': text},
+      body,
       token: token,
     );
     return _readChatMessagePayload(json);

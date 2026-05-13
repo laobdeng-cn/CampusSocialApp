@@ -918,6 +918,8 @@ class CampusChatMessage {
     required this.text,
     required this.createdAt,
     required this.isMine,
+    this.type = 'text',
+    this.imageUrl = '',
   });
 
   final String id;
@@ -925,6 +927,10 @@ class CampusChatMessage {
   final String text;
   final String createdAt;
   final bool isMine;
+  final String type;
+  final String imageUrl;
+
+  bool get isImage => type == 'image' && imageUrl.isNotEmpty;
 
   factory CampusChatMessage.fromJson(Map<String, dynamic> json) {
     final senderJson = _readMap(json, 'sender');

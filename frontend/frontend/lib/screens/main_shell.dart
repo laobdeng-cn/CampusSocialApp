@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
 import '../models/campus_feed.dart';
@@ -2216,6 +2217,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
+  final _imagePicker = ImagePicker();
   List<CampusChatMessage> _messages = const [];
   late String _conversationId;
   var _isLoading = false;
@@ -2299,18 +2301,58 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _ensureConversation() async {
+    if (_conversationId.isNotEmpty) return;
+    final conversation = await CampusRepository.instance.startConversation(
+      widget.contact,
+    );
+    _conversationId = conversation.id;
+  }
+
+  Future<void> _sendImageMessage() async {
+    if (_isSending) return;
+
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 82,
+      maxWidth: 1600,
+    );
+    if (picked == null) return;
+
+    setState(() => _isSending = true);
+    try {
+      await _ensureConversation();
+      final imageUrl = await CampusRepository.instance.uploadImage(
+        picked.path,
+        purpose: 'chat',
+      );
+      final message = await CampusRepository.instance.sendConversationMessage(
+        conversationId: _conversationId,
+        text: '[图片]',
+        type: 'image',
+        imageUrl: imageUrl,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _messages = [..._messages, message];
+        _showEmojiPanel = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } catch (error) {
+      if (mounted) _showShellMessage(context, _shellError(error));
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
     try {
-      if (_conversationId.isEmpty) {
-        final conversation = await CampusRepository.instance.startConversation(
-          widget.contact,
-        );
-        _conversationId = conversation.id;
-      }
+      await _ensureConversation();
       final message = await CampusRepository.instance.sendConversationMessage(
         conversationId: _conversationId,
         text: text,
@@ -2344,15 +2386,27 @@ class _ChatScreenState extends State<ChatScreen> {
         );
 
     final messageWidgets = _messages
-        .map(
-          (message) => message.isMine
+        .map((message) {
+          if (message.isImage) {
+            return message.isMine
+                ? _OutgoingImageChatBubble(
+                    user: currentUser,
+                    imageUrl: message.imageUrl,
+                  )
+                : _IncomingImageChatBubble(
+                    user: widget.contact,
+                    imageUrl: message.imageUrl,
+                  );
+          }
+
+          return message.isMine
               ? _OutgoingChatBubble(
                   user: currentUser,
                   text: message.text,
                   sent: true,
                 )
-              : _IncomingChatBubble(user: widget.contact, text: message.text),
-        )
+              : _IncomingChatBubble(user: widget.contact, text: message.text);
+        })
         .toList(growable: false);
 
     return Scaffold(
@@ -2417,6 +2471,7 @@ class _ChatScreenState extends State<ChatScreen> {
             isSending: _isSending,
             onSend: _sendMessage,
             onEmojiTap: _toggleEmojiPanel,
+            onImageTap: _sendImageMessage,
           ),
         ],
       ),
@@ -3004,12 +3059,68 @@ class _ChatEmojiPanel extends StatelessWidget {
   }
 }
 
+class _OutgoingImageChatBubble extends StatelessWidget {
+  const _OutgoingImageChatBubble({required this.user, required this.imageUrl});
+
+  final CampusUser user;
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(72, 8, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SmartImage(url: imageUrl, width: 190, height: 150),
+            ),
+          ),
+          const SizedBox(width: 8),
+          CampusAvatar(user: user, size: 36),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncomingImageChatBubble extends StatelessWidget {
+  const _IncomingImageChatBubble({required this.user, required this.imageUrl});
+
+  final CampusUser user;
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 72, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          CampusAvatar(user: user, size: 36),
+          const SizedBox(width: 8),
+          Flexible(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: SmartImage(url: imageUrl, width: 190, height: 150),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChatInputBar extends StatelessWidget {
   const _ChatInputBar({
     required this.controller,
     required this.focusNode,
     required this.onSend,
     required this.onEmojiTap,
+    required this.onImageTap,
     required this.isSending,
   });
 
@@ -3017,6 +3128,7 @@ class _ChatInputBar extends StatelessWidget {
   final FocusNode focusNode;
   final VoidCallback onSend;
   final VoidCallback onEmojiTap;
+  final VoidCallback onImageTap;
   final bool isSending;
 
   @override
@@ -3083,7 +3195,7 @@ class _ChatInputBar extends StatelessWidget {
                     splashRadius: 20,
                   ),
                   IconButton(
-                    onPressed: () => _showShellMessage(context, '图片消息功能正在完善中'),
+                    onPressed: isSending ? null : onImageTap,
                     icon: const Icon(
                       Icons.image_outlined,
                       color: AppColors.text,
