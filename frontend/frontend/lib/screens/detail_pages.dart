@@ -1937,18 +1937,26 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                         CampusCard(
                           child: ListTile(
                             contentPadding: EdgeInsets.zero,
-                            leading: CampusAvatar(
-                              user: xiaobei,
-                              size: 50,
-                              showBadge: true,
+                            leading: Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: AppColors.blue.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.groups_2_rounded,
+                                color: AppColors.blue,
+                              ),
                             ),
-                            title: const Text('林小北'),
-                            subtitle: const Text('计算机学院 · 大二\n热爱技术，乐于分享'),
-                            trailing: const Pill(
-                              label: '群主',
-                              color: AppColors.blue,
+                            title: const Text('社群信息'),
+                            subtitle: Text(
+                              '${group.members} 位成员 · ${group.admins} 位管理员',
                             ),
-                            isThreeLine: true,
+                            trailing: Pill(
+                              label: _groupVisibilityLabel(group.visibility),
+                              color: _groupVisibilityColor(group.visibility),
+                            ),
                           ),
                         ),
                         const SectionTitle(
