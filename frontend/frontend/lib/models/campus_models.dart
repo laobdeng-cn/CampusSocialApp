@@ -930,10 +930,11 @@ class CampusChatMessage {
   final String type;
   final String imageUrl;
 
-  bool get isImage => type == 'image' && imageUrl.isNotEmpty;
+  bool get isImage => type == 'image' && imageUrl.trim().isNotEmpty;
 
   factory CampusChatMessage.fromJson(Map<String, dynamic> json) {
     final senderJson = _readMap(json, 'sender');
+
     return CampusChatMessage(
       id: _readString(json, 'id', fallback: _readString(json, '_id')),
       sender: senderJson == null
@@ -949,6 +950,8 @@ class CampusChatMessage {
       text: _readString(json, 'text'),
       createdAt: _readString(json, 'createdAt', fallback: '刚刚'),
       isMine: json['isMine'] == true,
+      type: _readString(json, 'type', fallback: 'text'),
+      imageUrl: _readString(json, 'imageUrl'),
     );
   }
 }
