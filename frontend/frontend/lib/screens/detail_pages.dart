@@ -2040,10 +2040,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                     onPressed: () => _showMessage(context, '分享功能正在完善中'),
                     icon: const Icon(Icons.ios_share),
                   ),
-                  IconButton.filledTonal(
-                    onPressed: _openManagedGroups,
-                    icon: const Icon(Icons.more_horiz),
-                  ),
+                  if (group.canManage)
+                    IconButton.filledTonal(
+                      onPressed: _openManagedGroups,
+                      icon: const Icon(Icons.more_horiz),
+                    ),
                 ],
               ),
             ),

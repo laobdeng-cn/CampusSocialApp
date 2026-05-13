@@ -1083,16 +1083,20 @@ class CampusRepository {
 
   Future<CampusGroup> joinGroup(CampusGroup group) async {
     final id = _requireGroupId(group);
-    return _replaceCachedGroup(
+    final next = _replaceCachedGroup(
       await _apiClient.joinGroup(token: _requireToken(), groupId: id),
     );
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<CampusGroup> leaveGroup(CampusGroup group) async {
     final id = _requireGroupId(group);
-    return _replaceCachedGroup(
+    final next = _replaceCachedGroup(
       await _apiClient.leaveGroup(token: _requireToken(), groupId: id),
     );
+    _emitSync(CampusEventType.profileChanged);
+    return next;
   }
 
   Future<List<CampusGroup>> fetchMyGroups() async {

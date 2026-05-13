@@ -2812,7 +2812,7 @@ router.get('/me/groups', requireAuth, async (request, response, next) => {
   try {
     const memberships = await GroupMembership.find({
       user: request.user._id,
-      status: 'active',
+      status: { $in: ['active', 'pending'] },
     })
       .populate({
         path: 'group',
@@ -2830,10 +2830,13 @@ router.get('/me/groups', requireAuth, async (request, response, next) => {
         .filter((membership) => membership.group)
         .map((membership) => ({
           ...serializeGroup(membership.group, {
-            joined: true,
+            joined: membership.status === 'active',
             membershipRole: membership.role,
             membershipId: String(membership._id),
-            canManage: ['owner', 'admin'].includes(membership.role),
+            membershipStatus: membership.status,
+            canManage:
+              membership.status === 'active' &&
+              ['owner', 'admin'].includes(membership.role),
           }),
         })),
     });
