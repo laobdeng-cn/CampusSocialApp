@@ -105,6 +105,51 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
       ..addAll(draft.images);
   }
 
+  bool get _hasDraftContent {
+    final title = _titleController.text.trim();
+    final body = _bodyController.text.trim();
+    final topic = _topicController.text.trim();
+    final location = _locationController.text.trim();
+
+    return title.isNotEmpty ||
+        body.isNotEmpty ||
+        location.isNotEmpty ||
+        _imageUrls.isNotEmpty ||
+        (topic.isNotEmpty && topic != '校园生活');
+  }
+
+  Future<void> _handleBack() async {
+    if (_isSubmitting) return;
+
+    if (!_hasDraftContent) {
+      Navigator.pop(context, false);
+      return;
+    }
+
+    final action = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('确定要返回吗？'),
+          content: const Text('取消后会自动保存为草稿并返回；继续编辑会留在当前页面。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop('save'),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop('edit'),
+              child: const Text('继续编辑'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (!mounted || action == null || action == 'edit') return;
+    await _saveDraft();
+  }
+
   String _autoTitleFromBody(String body) {
     final normalized = body.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (normalized.isEmpty) return '未命名动态';
@@ -241,7 +286,7 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
   Future<void> _saveDraft() async {
     final title = _titleController.text.trim();
     final body = _bodyController.text.trim();
-    if (title.isEmpty && body.isEmpty) {
+    if (!_hasDraftContent) {
       _showMessage(context, '先写一点内容再保存草稿');
       return;
     }
@@ -270,223 +315,235 @@ class _PublishPostScreenState extends State<PublishPostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        leadingWidth: 82,
-        leading: TextButton(
-          onPressed: _isSubmitting ? null : _saveDraft,
-          child: const Text('草稿'),
-        ),
-        title: Text(
-          widget.initialPost != null
-              ? '编辑帖子'
-              : widget.initialDraft == null
-              ? '发布动态'
-              : '继续编辑',
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 14),
-            child: FilledButton(
-              onPressed: _isSubmitting ? null : _submit,
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          leadingWidth: 82,
+          leading: TextButton(
+            onPressed: _isSubmitting ? null : _handleBack,
+            child: const Text('返回'),
+          ),
+          title: Text(
+            widget.initialPost != null
+                ? '编辑帖子'
+                : widget.initialDraft == null
+                ? '发布动态'
+                : '继续编辑',
+          ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: FilledButton(
+                onPressed: _isSubmitting ? null : _submit,
+                style: FilledButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+                child: Text(
+                  _isSubmitting
+                      ? '处理中...'
+                      : widget.initialPost != null
+                      ? '保存'
+                      : '发布',
                 ),
               ),
-              child: Text(
-                _isSubmitting
-                    ? '处理中...'
-                    : widget.initialPost != null
-                    ? '保存'
-                    : '发布',
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
+          children: [
+            TextField(
+              controller: _titleController,
+              textInputAction: TextInputAction.next,
+              decoration: InputDecoration(
+                hintText: '给动态起个标题',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 24),
-        children: [
-          TextField(
-            controller: _titleController,
-            textInputAction: TextInputAction.next,
-            decoration: InputDecoration(
-              hintText: '给动态起个标题',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _bodyController,
-            minLines: 6,
-            maxLines: 8,
-            maxLength: 500,
-            decoration: InputDecoration(
-              hintText: '分享你的校园新鲜事...',
-              alignLabelWithHint: true,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _bodyController,
+              minLines: 6,
+              maxLines: 8,
+              maxLength: 500,
+              decoration: InputDecoration(
+                hintText: '分享你的校园新鲜事...',
+                alignLabelWithHint: true,
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 90,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _imageUrls.length + 1,
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                if (index == _imageUrls.length) {
-                  return InkWell(
-                    onTap: _pickAndUploadImage,
-                    borderRadius: BorderRadius.circular(14),
-                    child: Container(
-                      width: 90,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: AppColors.muted.withValues(alpha: 0.35),
-                          style: BorderStyle.solid,
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (_isUploadingImage)
-                            const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          else
-                            const Icon(
-                              Icons.add,
-                              size: 32,
-                              color: AppColors.muted,
-                            ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isUploadingImage ? '上传中' : '添加照片',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                return Stack(
-                  children: [
-                    SmartImage(url: _imageUrls[index], width: 90, height: 90),
-                    Positioned(
-                      right: 5,
-                      top: 5,
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 90,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _imageUrls.length + 1,
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  if (index == _imageUrls.length) {
+                    return InkWell(
+                      onTap: _pickAndUploadImage,
+                      borderRadius: BorderRadius.circular(14),
                       child: Container(
-                        width: 22,
-                        height: 22,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
+                        width: 90,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: AppColors.muted.withValues(alpha: 0.35),
+                            style: BorderStyle.solid,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() => _imageUrls.removeAt(index));
-                          },
-                          child: const Icon(Icons.close, size: 16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (_isUploadingImage)
+                              const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            else
+                              const Icon(
+                                Icons.add,
+                                size: 32,
+                                color: AppColors.muted,
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _isUploadingImage ? '上传中' : '添加照片',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 22),
-          TextField(
-            controller: _topicController,
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.tag_rounded, color: AppColors.blue),
-              hintText: '添加话题',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
+                    );
+                  }
+                  return Stack(
+                    children: [
+                      SmartImage(url: _imageUrls[index], width: 90, height: 90),
+                      Positioned(
+                        right: 5,
+                        top: 5,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: InkWell(
+                            onTap: () {
+                              setState(() => _imageUrls.removeAt(index));
+                            },
+                            child: const Icon(Icons.close, size: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.line),
-              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          InkWell(
-            onTap: _isSubmitting ? null : _editLocation,
-            borderRadius: BorderRadius.circular(18),
-            child: _PublishRow(
-              icon: Icons.location_on,
-              color: AppColors.green,
-              title: '所在位置',
-              value: _locationController.text.trim().isEmpty
-                  ? '点击添加位置'
-                  : _locationController.text.trim(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          CampusCard(
-            child: Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.blue.withValues(alpha: 0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.visibility, color: AppColors.blue),
+            const SizedBox(height: 22),
+            TextField(
+              controller: _topicController,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(
+                  Icons.tag_rounded,
+                  color: AppColors.blue,
                 ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Text(
-                    '谁可以看',
+                hintText: '添加话题',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: AppColors.line),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: _isSubmitting ? null : _editLocation,
+              borderRadius: BorderRadius.circular(18),
+              child: _PublishRow(
+                icon: Icons.location_on,
+                color: AppColors.green,
+                title: '所在位置',
+                value: _locationController.text.trim().isEmpty
+                    ? '点击添加位置'
+                    : _locationController.text.trim(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CampusCard(
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.blue.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.visibility, color: AppColors.blue),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Text(
+                      '谁可以看',
+                      style: TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    '公开 · 所有人可见',
                     style: TextStyle(
-                      color: AppColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                      color: AppColors.muted,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ),
-                const Text(
-                  '公开 · 所有人可见',
-                  style: TextStyle(
-                    color: AppColors.muted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          const SizedBox.shrink(),
-        ],
+            const SizedBox(height: 12),
+            const SizedBox.shrink(),
+          ],
+        ),
       ),
     );
   }
