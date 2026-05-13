@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
@@ -3257,6 +3258,16 @@ class _OutgoingImageChatBubble extends StatelessWidget {
   final CampusUser user;
   final String imageUrl;
 
+  void _openPreview(BuildContext context) {
+    if (imageUrl.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ChatImagePreviewScreen(imageUrl: imageUrl),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -3266,9 +3277,26 @@ class _OutgoingImageChatBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Flexible(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: SmartImage(url: imageUrl, width: 190, height: 150),
+            child: GestureDetector(
+              onTap: () => _openPreview(context),
+              child: Hero(
+                tag: 'chat-image-$imageUrl',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: imageUrl.isEmpty
+                      ? Container(
+                          width: 190,
+                          height: 150,
+                          alignment: Alignment.center,
+                          color: const Color(0xFFEAF2FF),
+                          child: const Text(
+                            '图片地址为空',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        )
+                      : SmartImage(url: imageUrl, width: 190, height: 150),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -3285,6 +3313,16 @@ class _IncomingImageChatBubble extends StatelessWidget {
   final CampusUser user;
   final String imageUrl;
 
+  void _openPreview(BuildContext context) {
+    if (imageUrl.isEmpty) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ChatImagePreviewScreen(imageUrl: imageUrl),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -3295,12 +3333,95 @@ class _IncomingImageChatBubble extends StatelessWidget {
           CampusAvatar(user: user, size: 36),
           const SizedBox(width: 8),
           Flexible(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: SmartImage(url: imageUrl, width: 190, height: 150),
+            child: GestureDetector(
+              onTap: () => _openPreview(context),
+              child: Hero(
+                tag: 'chat-image-$imageUrl',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: imageUrl.isEmpty
+                      ? Container(
+                          width: 190,
+                          height: 150,
+                          alignment: Alignment.center,
+                          color: const Color(0xFFEAF2FF),
+                          child: const Text(
+                            '图片地址为空',
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        )
+                      : SmartImage(url: imageUrl, width: 190, height: 150),
+                ),
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChatImagePreviewScreen extends StatelessWidget {
+  const _ChatImagePreviewScreen({required this.imageUrl});
+
+  final String imageUrl;
+
+  Future<void> _copyImageUrl(BuildContext context) async {
+    await Clipboard.setData(ClipboardData(text: imageUrl));
+    if (!context.mounted) return;
+    _showShellMessage(context, '图片地址已复制');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: const Text('图片预览'),
+        actions: [
+          IconButton(
+            onPressed: () => _copyImageUrl(context),
+            icon: const Icon(Icons.copy_rounded),
+            tooltip: '复制图片地址',
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Center(
+              child: Hero(
+                tag: 'chat-image-$imageUrl',
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4,
+                  child: SmartImage(
+                    url: imageUrl,
+                    width: double.infinity,
+                    height: double.infinity,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 18,
+              child: FilledButton.icon(
+                onPressed: () => _copyImageUrl(context),
+                icon: const Icon(Icons.copy_rounded),
+                label: const Text('复制图片地址'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: 0.16),
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
