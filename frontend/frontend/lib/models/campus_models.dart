@@ -920,6 +920,8 @@ class CampusChatMessage {
     required this.isMine,
     this.type = 'text',
     this.imageUrl = '',
+    this.audioUrl = '',
+    this.duration = 0,
   });
 
   final String id;
@@ -929,8 +931,11 @@ class CampusChatMessage {
   final bool isMine;
   final String type;
   final String imageUrl;
+  final String audioUrl;
+  final int duration;
 
   bool get isImage => type == 'image' && imageUrl.trim().isNotEmpty;
+  bool get isAudio => type == 'audio' && audioUrl.trim().isNotEmpty;
 
   factory CampusChatMessage.fromJson(Map<String, dynamic> json) {
     final senderJson = _readMap(json, 'sender');
@@ -952,6 +957,8 @@ class CampusChatMessage {
       isMine: json['isMine'] == true,
       type: _readString(json, 'type', fallback: 'text'),
       imageUrl: _readString(json, 'imageUrl'),
+      audioUrl: _readString(json, 'audioUrl'),
+      duration: _readInt(json, 'duration'),
     );
   }
 }

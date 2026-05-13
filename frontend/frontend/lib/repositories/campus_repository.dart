@@ -304,6 +304,14 @@ class CampusRepository {
     );
   }
 
+  Future<String> uploadAudio(String filePath, {String purpose = 'chat'}) {
+    return _apiClient.uploadAudio(
+      token: _requireToken(),
+      filePath: filePath,
+      purpose: purpose,
+    );
+  }
+
   Future<CampusUser> login({
     required String username,
     required String password,
@@ -1084,6 +1092,8 @@ class CampusRepository {
     required String text,
     String type = 'text',
     String imageUrl = '',
+    String audioUrl = '',
+    int duration = 0,
   }) async {
     if (conversationId.isEmpty) {
       throw const CampusApiException('会话暂未同步到后端');
@@ -1094,6 +1104,8 @@ class CampusRepository {
       text: text,
       type: type,
       imageUrl: imageUrl,
+      audioUrl: audioUrl,
+      duration: duration,
     );
     _emitSync(
       CampusEventType.notificationChanged,

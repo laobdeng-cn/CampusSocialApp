@@ -22,6 +22,16 @@ class CampusApiClient {
     return 'image/jpeg';
   }
 
+  static String _audioContentType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.mp3')) return 'audio/mpeg';
+    if (lower.endsWith('.wav')) return 'audio/wav';
+    if (lower.endsWith('.webm')) return 'audio/webm';
+    if (lower.endsWith('.ogg')) return 'audio/ogg';
+    if (lower.endsWith('.aac')) return 'audio/aac';
+    return 'audio/mp4';
+  }
+
   Future<CampusFeed> fetchFeed() async {
     final json = await _getJson('/api/feed');
     return CampusFeed.fromJson(json);
@@ -652,6 +662,74 @@ class CampusApiClient {
     return _readSettingsPayload(json);
   }
 
+  Future<String> uploadAudio({
+    required String token,
+    required String filePath,
+    String purpose = 'chat',
+  }) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw const CampusApiException('语音文件不存在');
+    }
+
+    final uri = Uri.parse(baseUrl).replace(path: '/api/uploads/audio');
+    final boundary =
+        '----campus-social-${DateTime.now().microsecondsSinceEpoch}';
+    final fileName = file.uri.pathSegments.isEmpty
+        ? 'voice.m4a'
+        : file.uri.pathSegments.last;
+    final contentType = _audioContentType(fileName);
+    final bytes = await file.readAsBytes();
+    final body = BytesBuilder();
+
+    void addText(String text) {
+      body.add(utf8.encode(text));
+    }
+
+    addText('--$boundary\r\n');
+    addText('Content-Disposition: form-data; name="purpose"\r\n\r\n');
+    addText('$purpose\r\n');
+    addText('--$boundary\r\n');
+    addText(
+      'Content-Disposition: form-data; name="audio"; filename="$fileName"\r\n',
+    );
+    addText('Content-Type: $contentType\r\n\r\n');
+    body.add(bytes);
+    addText('\r\n--$boundary--\r\n');
+
+    final client = HttpClient()..connectionTimeout = timeout;
+    try {
+      final request = await client.postUrl(uri).timeout(timeout);
+      request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      request.headers.contentType = ContentType(
+        'multipart',
+        'form-data',
+        parameters: {'boundary': boundary},
+      );
+      request.contentLength = body.length;
+      request.add(body.takeBytes());
+      final response = await request.close().timeout(timeout);
+      final responseBody = await utf8.decoder
+          .bind(response)
+          .join()
+          .timeout(timeout);
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw CampusApiException(
+          'Request failed with ${response.statusCode}: $responseBody',
+        );
+      }
+
+      final decoded = jsonDecode(responseBody);
+      if (decoded is Map && decoded['url'] != null) {
+        return decoded['url'].toString();
+      }
+      throw const CampusApiException('Response is missing uploaded audio URL.');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   Future<List<CampusFavoriteRecord>> fetchFavorites({
     required String token,
   }) async {
@@ -899,10 +977,18 @@ class CampusApiClient {
     required String text,
     String type = 'text',
     String imageUrl = '',
+    String audioUrl = '',
+    int duration = 0,
   }) async {
     final body = <String, dynamic>{'type': type, 'text': text};
     if (imageUrl.trim().isNotEmpty) {
       body['imageUrl'] = imageUrl.trim();
+    }
+    if (audioUrl.trim().isNotEmpty) {
+      body['audioUrl'] = audioUrl.trim();
+    }
+    if (duration > 0) {
+      body['duration'] = duration;
     }
 
     final json = await _postJson(
