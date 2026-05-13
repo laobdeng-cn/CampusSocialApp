@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../data/sample_data.dart';
@@ -3366,12 +3365,6 @@ class _ChatImagePreviewScreen extends StatelessWidget {
 
   final String imageUrl;
 
-  Future<void> _copyImageUrl(BuildContext context) async {
-    await Clipboard.setData(ClipboardData(text: imageUrl));
-    if (!context.mounted) return;
-    _showShellMessage(context, '图片地址已复制');
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -3380,47 +3373,34 @@ class _ChatImagePreviewScreen extends StatelessWidget {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         elevation: 0,
-        title: const Text('图片预览'),
-        actions: [
-          IconButton(
-            onPressed: () => _copyImageUrl(context),
-            icon: const Icon(Icons.copy_rounded),
-            tooltip: '复制图片地址',
-          ),
-        ],
       ),
       body: SafeArea(
-        child: Stack(
-          children: [
-            Center(
-              child: Hero(
-                tag: 'chat-image-$imageUrl',
-                child: InteractiveViewer(
-                  minScale: 0.8,
-                  maxScale: 4,
-                  child: SmartImage(
-                    url: imageUrl,
-                    width: double.infinity,
-                    height: double.infinity,
-                  ),
-                ),
+        child: Center(
+          child: Hero(
+            tag: 'chat-image-$imageUrl',
+            child: InteractiveViewer(
+              minScale: 0.8,
+              maxScale: 4,
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Text(
+                      '图片加载失败',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  );
+                },
               ),
             ),
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 18,
-              child: FilledButton.icon(
-                onPressed: () => _copyImageUrl(context),
-                icon: const Icon(Icons.copy_rounded),
-                label: const Text('复制图片地址'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.16),
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
