@@ -2218,6 +2218,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _imagePicker = ImagePicker();
+  Timer? _pollingTimer;
   List<CampusChatMessage> _messages = const [];
   late String _conversationId;
   var _isLoading = false;
@@ -2230,15 +2231,56 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationId = widget.conversationId;
     _messageFocusNode.addListener(_handleMessageFocusChange);
     _loadMessages();
+    _startPollingMessages();
   }
 
   @override
   void dispose() {
+    _pollingTimer?.cancel();
     _messageFocusNode.removeListener(_handleMessageFocusChange);
     _messageController.dispose();
     _messageFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _startPollingMessages() {
+    _pollingTimer?.cancel();
+
+    if (_conversationId.isEmpty) return;
+
+    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      _refreshMessagesSilently();
+    });
+  }
+
+  bool _isSameMessageList(
+    List<CampusChatMessage> left,
+    List<CampusChatMessage> right,
+  ) {
+    if (left.length != right.length) return false;
+    if (left.isEmpty && right.isEmpty) return true;
+
+    return left.last.id == right.last.id &&
+        left.last.text == right.last.text &&
+        left.last.imageUrl == right.last.imageUrl;
+  }
+
+  Future<void> _refreshMessagesSilently() async {
+    if (_conversationId.isEmpty || _isLoading || _isSending) return;
+
+    try {
+      final repo = CampusRepository.instance;
+      final messages = await repo.fetchConversationMessages(_conversationId);
+      await repo.markConversationRead(_conversationId);
+
+      if (!mounted || _isSameMessageList(_messages, messages)) return;
+
+      setState(() => _messages = messages);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } catch (_) {
+      // 轮询失败不打扰用户，避免网络波动时反复弹错误。
+    }
   }
 
   void _handleMessageFocusChange() {
@@ -2307,6 +2349,7 @@ class _ChatScreenState extends State<ChatScreen> {
       widget.contact,
     );
     _conversationId = conversation.id;
+    _startPollingMessages();
   }
 
   Future<void> _sendImageMessage() async {
