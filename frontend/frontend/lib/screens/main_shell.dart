@@ -2231,6 +2231,7 @@ class _ChatScreenState extends State<ChatScreen> {
   var _isLoading = false;
   var _isSending = false;
   var _isRecording = false;
+  var _isVoiceInputMode = false;
   var _showEmojiPanel = false;
 
   @override
@@ -2311,6 +2312,16 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _toggleVoiceInputMode() {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isVoiceInputMode = !_isVoiceInputMode;
+      if (_isVoiceInputMode) {
+        _showEmojiPanel = false;
+      }
+    });
+  }
+
   void _toggleEmojiPanel() {
     FocusScope.of(context).unfocus();
     setState(() {
@@ -2385,9 +2396,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() {
         _isRecording = true;
+        _isVoiceInputMode = true;
         _recordingStartedAt = DateTime.now();
       });
-      _showShellMessage(context, '正在录音，松开发送');
     } catch (error) {
       if (mounted) _showShellMessage(context, _shellError(error));
     }
@@ -2799,9 +2810,11 @@ class _ChatScreenState extends State<ChatScreen> {
             focusNode: _messageFocusNode,
             isSending: _isSending,
             isRecording: _isRecording,
+            isVoiceInputMode: _isVoiceInputMode,
             onSend: _sendMessage,
             onEmojiTap: _toggleEmojiPanel,
             onImageTap: _sendImageMessage,
+            onVoiceModeToggle: _toggleVoiceInputMode,
             onVoiceLongPressStart: _startVoiceRecording,
             onVoiceLongPressEnd: _finishVoiceRecording,
             onVoiceLongPressCancel: _cancelVoiceRecording,
@@ -3709,11 +3722,13 @@ class _ChatInputBar extends StatelessWidget {
     required this.onSend,
     required this.onEmojiTap,
     required this.onImageTap,
+    required this.onVoiceModeToggle,
     required this.onVoiceLongPressStart,
     required this.onVoiceLongPressEnd,
     required this.onVoiceLongPressCancel,
     required this.isSending,
     required this.isRecording,
+    required this.isVoiceInputMode,
   });
 
   final TextEditingController controller;
@@ -3721,21 +3736,20 @@ class _ChatInputBar extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onEmojiTap;
   final VoidCallback onImageTap;
+  final VoidCallback onVoiceModeToggle;
   final VoidCallback onVoiceLongPressStart;
   final VoidCallback onVoiceLongPressEnd;
   final VoidCallback onVoiceLongPressCancel;
   final bool isSending;
   final bool isRecording;
+  final bool isVoiceInputMode;
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        14,
-        10,
-        14,
-        MediaQuery.paddingOf(context).bottom + 10,
-      ),
+      padding: EdgeInsets.fromLTRB(14, 10, 14, bottomInset + 10),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: AppColors.line)),
@@ -3743,99 +3757,206 @@ class _ChatInputBar extends StatelessWidget {
       child: Row(
         children: [
           _ChatCircleButton(
-            icon: isRecording ? Icons.mic_rounded : Icons.mic_none_rounded,
+            icon: isVoiceInputMode
+                ? Icons.keyboard_alt_outlined
+                : Icons.mic_none_rounded,
             isActive: isRecording,
-            onTap: () => _showShellMessage(context, '按住麦克风录音，松开发送'),
-            onLongPressStart: isSending ? null : onVoiceLongPressStart,
-            onLongPressEnd: isSending ? null : onVoiceLongPressEnd,
-            onLongPressCancel: isSending ? null : onVoiceLongPressCancel,
+            onTap: onVoiceModeToggle,
           ),
           const SizedBox(width: 9),
           Expanded(
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.only(left: 14, right: 4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: AppColors.line),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              child: isVoiceInputMode
+                  ? _ChatHoldToTalkBar(
+                      key: const ValueKey('voice-input'),
+                      isRecording: isRecording,
+                      isSending: isSending,
+                      onLongPressStart: onVoiceLongPressStart,
+                      onLongPressEnd: onVoiceLongPressEnd,
+                      onLongPressCancel: onVoiceLongPressCancel,
+                    )
+                  : _ChatTextInputField(
+                      key: const ValueKey('text-input'),
                       controller: controller,
                       focusNode: focusNode,
-                      minLines: 1,
-                      maxLines: 1,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) {
-                        if (!isSending) onSend();
-                      },
-                      decoration: const InputDecoration(
-                        hintText: '输入消息...',
-                        hintStyle: TextStyle(color: AppColors.muted),
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
+                      isSending: isSending,
+                      onSend: onSend,
+                      onEmojiTap: onEmojiTap,
+                      onImageTap: onImageTap,
                     ),
-                  ),
-                  IconButton(
-                    onPressed: onEmojiTap,
-                    icon: const Icon(
-                      Icons.emoji_emotions_outlined,
-                      color: AppColors.text,
-                      size: 24,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    splashRadius: 20,
-                  ),
-                  IconButton(
-                    onPressed: isSending ? null : onImageTap,
-                    icon: const Icon(
-                      Icons.image_outlined,
-                      color: AppColors.text,
-                      size: 24,
-                    ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    splashRadius: 20,
-                  ),
-                ],
-              ),
             ),
           ),
           const SizedBox(width: 10),
-          SizedBox(
-            height: 50,
-            child: ElevatedButton(
-              onPressed: isSending ? null : onSend,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.blue,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: AppColors.blue.withValues(alpha: 0.45),
-                disabledForegroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 22),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
+          if (!isVoiceInputMode)
+            SizedBox(
+              height: 50,
+              child: ElevatedButton(
+                onPressed: isSending ? null : onSend,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.blue,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.blue.withValues(
+                    alpha: 0.45,
+                  ),
+                  disabledForegroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 22),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                textStyle: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w900,
-                ),
+                child: Text(isSending ? '发送中' : '发送'),
               ),
-              child: Text(isSending ? '发送中' : '发送'),
+            )
+          else ...[
+            _ChatCircleButton(
+              icon: Icons.emoji_emotions_outlined,
+              onTap: onEmojiTap,
+            ),
+            const SizedBox(width: 8),
+            _ChatCircleButton(
+              icon: Icons.add_rounded,
+              onTap: isSending ? () {} : onImageTap,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatTextInputField extends StatelessWidget {
+  const _ChatTextInputField({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.isSending,
+    required this.onSend,
+    required this.onEmojiTap,
+    required this.onImageTap,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool isSending;
+  final VoidCallback onSend;
+  final VoidCallback onEmojiTap;
+  final VoidCallback onImageTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.only(left: 14, right: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              minLines: 1,
+              maxLines: 1,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) {
+                if (!isSending) onSend();
+              },
+              decoration: const InputDecoration(
+                hintText: '输入消息...',
+                hintStyle: TextStyle(color: AppColors.muted),
+                border: InputBorder.none,
+                isDense: true,
+              ),
             ),
           ),
+          IconButton(
+            onPressed: onEmojiTap,
+            icon: const Icon(
+              Icons.emoji_emotions_outlined,
+              color: AppColors.text,
+              size: 24,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            splashRadius: 20,
+          ),
+          IconButton(
+            onPressed: isSending ? null : onImageTap,
+            icon: const Icon(
+              Icons.image_outlined,
+              color: AppColors.text,
+              size: 24,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            splashRadius: 20,
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChatHoldToTalkBar extends StatelessWidget {
+  const _ChatHoldToTalkBar({
+    super.key,
+    required this.isRecording,
+    required this.isSending,
+    required this.onLongPressStart,
+    required this.onLongPressEnd,
+    required this.onLongPressCancel,
+  });
+
+  final bool isRecording;
+  final bool isSending;
+  final VoidCallback onLongPressStart;
+  final VoidCallback onLongPressEnd;
+  final VoidCallback onLongPressCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPressStart: isSending ? null : (_) => onLongPressStart(),
+      onLongPressEnd: isSending ? null : (_) => onLongPressEnd(),
+      onLongPressCancel: isSending ? null : onLongPressCancel,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 50,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isRecording
+              ? AppColors.blue.withValues(alpha: 0.12)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isRecording ? AppColors.blue : AppColors.line,
+            width: isRecording ? 1.4 : 1,
+          ),
+        ),
+        child: Text(
+          isSending
+              ? '发送中...'
+              : isRecording
+              ? '松开 发送'
+              : '按住 说话',
+          style: TextStyle(
+            color: isRecording ? AppColors.blue : AppColors.ink,
+            fontSize: 17,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.2,
+          ),
+        ),
       ),
     );
   }
@@ -3845,47 +3966,30 @@ class _ChatCircleButton extends StatelessWidget {
   const _ChatCircleButton({
     required this.icon,
     required this.onTap,
-    this.onLongPressStart,
-    this.onLongPressEnd,
-    this.onLongPressCancel,
     this.isActive = false,
   });
 
   final IconData icon;
   final VoidCallback onTap;
-  final VoidCallback? onLongPressStart;
-  final VoidCallback? onLongPressEnd;
-  final VoidCallback? onLongPressCancel;
   final bool isActive;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onLongPressStart: onLongPressStart == null
-          ? null
-          : (_) => onLongPressStart?.call(),
-      onLongPressEnd: onLongPressEnd == null
-          ? null
-          : (_) => onLongPressEnd?.call(),
-      onLongPressCancel: onLongPressCancel,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: isActive ? AppColors.blue : Colors.white,
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: isActive ? AppColors.blue : AppColors.line,
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: isActive ? Colors.white : AppColors.text,
-            size: 23,
-          ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(22),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.blue : Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: isActive ? AppColors.blue : AppColors.line),
+        ),
+        child: Icon(
+          icon,
+          color: isActive ? Colors.white : AppColors.text,
+          size: 23,
         ),
       ),
     );
